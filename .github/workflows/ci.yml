@@ -38,3 +38,43 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
+
+  postgres:
+    name: PostgreSQL schema isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: drive_test
+          POSTGRES_USER: drive
+          POSTGRES_PASSWORD: drive-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U drive -d drive_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Apply migrations
+        shell: bash
+        run: |
+          for migration in migrations/*.sql; do
+            docker run --rm --network host \
+              -e PGPASSWORD=drive-test-only \
+              -v "$PWD:/workspace:ro" \
+              postgres:16-alpine \
+              psql -h 127.0.0.1 -U drive -d drive_test -v ON_ERROR_STOP=1 -f "/workspace/$migration"
+          done
+      - name: Run schema isolation regression
+        shell: bash
+        run: |
+          docker run --rm --network host \
+            -e PGPASSWORD=drive-test-only \
+            -v "$PWD:/workspace:ro" \
+            postgres:16-alpine \
+            psql -h 127.0.0.1 -U drive -d drive_test -v ON_ERROR_STOP=1 -f /workspace/tests/sql/schema_isolation.sql
