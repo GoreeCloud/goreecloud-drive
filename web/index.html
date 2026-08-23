@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>GoreeCloud Drive — Development</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Drive navigation">
+      <div class="brand" aria-label="GoreeCloud Drive">
+        <span class="brand-mark" aria-hidden="true">D</span>
+        <span>Drive</span>
+      </div>
+      <nav>
+        <a class="nav-item active" href="#overview" aria-current="page">Overview</a>
+        <span class="nav-item disabled" aria-disabled="true">My Files — Milestone 1</span>
+        <span class="nav-item disabled" aria-disabled="true">Shared — Milestone 3</span>
+        <span class="nav-item disabled" aria-disabled="true">Spaces — Milestone 1</span>
+        <span class="nav-item disabled" aria-disabled="true">Trash — Milestone 2</span>
+      </nav>
+      <p class="foundation-note">Glaze UI foundation shell</p>
+    </aside>
+
+    <main id="content" class="content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Development</p>
+          <h1>GoreeCloud Drive</h1>
+        </div>
+        <span id="service-state" class="status-chip" role="status">Checking service…</span>
+      </header>
+
+      <section id="overview" class="hero" aria-labelledby="hero-title">
+        <p class="eyebrow">Private, portable, self-hosted</p>
+        <h2 id="hero-title">Your files, under your control.</h2>
+        <p>This Milestone 0 shell proves the product boundary and service connection without pretending unfinished storage workflows are available.</p>
+        <button id="health-check" type="button">Check service health</button>
+        <p id="health-result" class="result" aria-live="polite"></p>
+      </section>
+
+      <section class="cards" aria-label="Foundation status">
+        <article class="card">
+          <h3>Multi-user first</h3>
+          <p>The foundation schema models accounts, personal spaces, shared spaces, memberships, quotas, and activity from the first migration.</p>
+        </article>
+        <article class="card">
+          <h3>Privacy by default</h3>
+          <p>No advertising, third-party behavioral analytics, or remote telemetry is required by this foundation.</p>
+        </article>
+        <article class="card">
+          <h3>Transfer-ready architecture</h3>
+          <p>Final objects and staging storage are separated so resumable uploads can later finalize atomically.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
