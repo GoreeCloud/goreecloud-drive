@@ -10,10 +10,21 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/GoreeCloud/goreecloud-drive/internal/authn"
+	"github.com/GoreeCloud/goreecloud-drive/internal/authz"
 	"github.com/GoreeCloud/goreecloud-drive/internal/config"
+	"github.com/GoreeCloud/goreecloud-drive/internal/spaceaccess"
 )
 
 const developmentVersion = "0.0.0-dev"
+
+// Dependencies are security-sensitive runtime boundaries injected into the HTTP
+// service. The default constructor intentionally supplies no trusted identity or
+// membership source.
+type Dependencies struct {
+	Principals  authn.Resolver
+	Memberships spaceaccess.MembershipResolver
+}
 
 // Server wraps the standard library HTTP server so startup and shutdown stay
 // explicit and testable.
@@ -21,8 +32,19 @@ type Server struct {
 	http *http.Server
 }
 
-// New constructs the development API and static Glaze UI shell.
+// New constructs the development API with fail-closed authorization defaults.
 func New(cfg config.Config, logger *slog.Logger) *Server {
+	return NewWithDependencies(cfg, logger, Dependencies{Principals: authn.DenyAllResolver{}})
+}
+
+// NewWithDependencies constructs the development API with explicit trusted
+// authentication and membership boundaries.
+func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependencies) *Server {
+	if deps.Principals == nil {
+		deps.Principals = authn.DenyAllResolver{}
+	}
+	access := spaceaccess.New(deps.Memberships)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -31,6 +53,7 @@ func New(cfg config.Config, logger *slog.Logger) *Server {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 	mux.HandleFunc("GET /api/v1/status", statusHandler)
+	mux.HandleFunc("GET /api/v1/spaces/{spaceID}/capabilities/{action}", capabilityHandler(deps.Principals, access))
 	mux.Handle("/", http.FileServer(http.Dir(cfg.WebDir)))
 
 	handler := requestLogging(logger, securityHeaders(requestID(mux)))
@@ -57,12 +80,36 @@ func statusHandler(w http.ResponseWriter, _ *http.Request) {
 		"version":   developmentVersion,
 		"lifecycle": "Development",
 		"capabilities": map[string]bool{
-			"authentication":    false,
-			"resumable_uploads": false,
-			"private_spaces":    false,
-			"shared_spaces":     false,
+			"authentication":     false,
+			"authorization_core": true,
+			"resumable_uploads":  false,
+			"private_spaces":     false,
+			"shared_spaces":      false,
 		},
 	})
+}
+
+func capabilityHandler(principals authn.Resolver, access spaceaccess.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, err := principals.Resolve(r.Context(), r)
+		if err != nil || principal.AccountID == "" {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+			return
+		}
+
+		spaceID := r.PathValue("spaceID")
+		action := authz.Action(r.PathValue("action"))
+		if !access.Allows(r.Context(), principal.AccountID, spaceID, action) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"space_id": spaceID,
+			"action":   action,
+			"allowed":  true,
+		})
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
