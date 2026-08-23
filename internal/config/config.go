@@ -11,11 +11,11 @@ import (
 
 // Config contains the minimum runtime settings for the development service.
 type Config struct {
-	Bind              string
-	DataDir           string
-	WebDir            string
-	AllowPublicBind   bool
-	ShutdownTimeout   time.Duration
+	Bind            string
+	DataDir         string
+	WebDir          string
+	AllowPublicBind bool
+	ShutdownTimeout time.Duration
 }
 
 // Load reads environment configuration and rejects unsafe or malformed values.
