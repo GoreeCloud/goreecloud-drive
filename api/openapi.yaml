@@ -1,0 +1,52 @@
+openapi: 3.1.0
+info:
+  title: GoreeCloud Drive API
+  version: 0.0.0-dev
+  description: >-
+    Development API contract for GoreeCloud Drive. Authentication, file transfer,
+    Spaces, sharing, and recovery APIs are intentionally not represented as
+    complete until their enforcement boundaries exist.
+servers:
+  - url: /
+paths:
+  /healthz:
+    get:
+      operationId: health
+      summary: Process liveness
+      responses:
+        '200':
+          description: Process is alive.
+  /readyz:
+    get:
+      operationId: readiness
+      summary: Development readiness
+      responses:
+        '200':
+          description: Development service is ready to receive requests.
+  /api/v1/status:
+    get:
+      operationId: getStatus
+      summary: Report lifecycle and implemented capability state
+      responses:
+        '200':
+          description: Current service state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+components:
+  schemas:
+    Status:
+      type: object
+      required: [service, version, lifecycle, capabilities]
+      properties:
+        service:
+          const: GoreeCloud Drive
+        version:
+          type: string
+        lifecycle:
+          const: Development
+        capabilities:
+          type: object
+          additionalProperties:
+            type: boolean
