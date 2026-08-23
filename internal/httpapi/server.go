@@ -69,7 +69,7 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 }
 
 // ListenAndServe starts the HTTP listener.
-func (s *Server) ListenAndServe() error { return s.http.ListenAndServe() }
+func (s *Server) ListenAndServe() error              { return s.http.ListenAndServe() }
 
 // Shutdown gracefully stops the HTTP listener.
 func (s *Server) Shutdown(ctx context.Context) error { return s.http.Shutdown(ctx) }
@@ -80,11 +80,11 @@ func statusHandler(w http.ResponseWriter, _ *http.Request) {
 		"version":   developmentVersion,
 		"lifecycle": "Development",
 		"capabilities": map[string]bool{
-			"authentication":    false,
+			"authentication":     false,
 			"authorization_core": true,
-			"resumable_uploads": false,
-			"private_spaces":    false,
-			"shared_spaces":     false,
+			"resumable_uploads":  false,
+			"private_spaces":     false,
+			"shared_spaces":      false,
 		},
 	})
 }
