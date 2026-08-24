@@ -27,15 +27,15 @@ const (
 )
 
 type Node struct {
-	ID        string  `json:"id"`
-	SpaceID   string  `json:"space_id"`
-	ParentID  *string `json:"parent_id,omitempty"`
-	Kind      Kind    `json:"kind"`
-	Name      string  `json:"name"`
-	CreatedBy string  `json:"created_by"`
-	CreatedAt string  `json:"created_at,omitempty"`
-	ModifiedAt string `json:"modified_at,omitempty"`
-	TrashedAt *string `json:"trashed_at,omitempty"`
+	ID         string  `json:"id"`
+	SpaceID    string  `json:"space_id"`
+	ParentID   *string `json:"parent_id,omitempty"`
+	Kind       Kind    `json:"kind"`
+	Name       string  `json:"name"`
+	CreatedBy  string  `json:"created_by"`
+	CreatedAt  string  `json:"created_at,omitempty"`
+	ModifiedAt string  `json:"modified_at,omitempty"`
+	TrashedAt  *string `json:"trashed_at,omitempty"`
 }
 
 type Repository interface {
