@@ -91,13 +91,13 @@ func statusHandler(w http.ResponseWriter, _ *http.Request) {
 		"version":   developmentVersion,
 		"lifecycle": "Development",
 		"capabilities": map[string]bool{
-			"authentication":     false,
-			"authorization_core": true,
+			"authentication":       false,
+			"authorization_core":   true,
 			"persistent_node_crud": true,
-			"file_content_io":     false,
-			"resumable_uploads":   false,
-			"private_spaces":      false,
-			"shared_spaces":       false,
+			"file_content_io":      false,
+			"resumable_uploads":    false,
+			"private_spaces":       false,
+			"shared_spaces":        false,
 		},
 	})
 }
