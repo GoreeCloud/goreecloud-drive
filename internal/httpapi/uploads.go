@@ -1,12 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/GoreeCloud/goreecloud-drive/internal/authn"
 	"github.com/GoreeCloud/goreecloud-drive/internal/authz"
@@ -44,18 +44,22 @@ func NewWithUploads(cfg config.Config, logger *slog.Logger, deps Dependencies, u
 }
 
 func createUploadHandler(principals authn.Resolver, access spaceaccess.Service, nodeService nodes.Service, service UploadService) http.HandlerFunc {
-	type request struct { NodeID string `json:"node_id"` }
+	type request struct {
+		NodeID string `json:"node_id"`
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := resolvePrincipal(w, r, principals)
-		if !ok { return }
+		if !ok {
+			return
+		}
 		spaceID := r.PathValue("spaceID")
 		if !access.Allows(r.Context(), principal.AccountID, spaceID, authz.ActionCreateFile) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error":"access denied"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
 			return
 		}
 		var body request
 		if err := decodeJSON(w, r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid request body"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
 		node, err := nodeService.Get(r.Context(), principal.AccountID, spaceID, body.NodeID)
@@ -64,7 +68,7 @@ func createUploadHandler(principals authn.Resolver, access spaceaccess.Service, 
 			return
 		}
 		if node.Kind != nodes.KindFile {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error":"uploads require a file node"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "uploads require a file node"})
 			return
 		}
 		session, err := service.Create(r.Context(), principal.AccountID, spaceID, node.ID)
@@ -81,9 +85,14 @@ func createUploadHandler(principals authn.Resolver, access spaceaccess.Service, 
 func getUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := resolvePrincipal(w, r, principals)
-		if !ok { return }
+		if !ok {
+			return
+		}
 		session, err := service.Get(r.Context(), principal.AccountID, r.PathValue("spaceID"), r.PathValue("uploadID"))
-		if err != nil { writeUploadError(w, err); return }
+		if err != nil {
+			writeUploadError(w, err)
+			return
+		}
 		w.Header().Set("Upload-Offset", strconv.FormatInt(session.Offset, 10))
 		writeJSON(w, http.StatusOK, session)
 	}
@@ -92,10 +101,12 @@ func getUploadHandler(principals authn.Resolver, service UploadService) http.Han
 func appendUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := resolvePrincipal(w, r, principals)
-		if !ok { return }
+		if !ok {
+			return
+		}
 		offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
 		if err != nil || offset < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error":"valid Upload-Offset header required"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "valid Upload-Offset header required"})
 			return
 		}
 		session, err := service.Append(r.Context(), principal.AccountID, r.PathValue("spaceID"), r.PathValue("uploadID"), offset, r.Body)
@@ -114,9 +125,14 @@ func appendUploadHandler(principals authn.Resolver, service UploadService) http.
 func completeUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := resolvePrincipal(w, r, principals)
-		if !ok { return }
+		if !ok {
+			return
+		}
 		session, err := service.Complete(r.Context(), principal.AccountID, r.PathValue("spaceID"), r.PathValue("uploadID"))
-		if err != nil { writeUploadError(w, err); return }
+		if err != nil {
+			writeUploadError(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, session)
 	}
 }
@@ -124,16 +140,14 @@ func completeUploadHandler(principals authn.Resolver, service UploadService) htt
 func writeUploadError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, uploads.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, map[string]string{"error":"upload session not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "upload session not found"})
 	case errors.Is(err, uploads.ErrForbidden):
-		writeJSON(w, http.StatusForbidden, map[string]string{"error":"access denied"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
 	case errors.Is(err, uploads.ErrOffsetMismatch):
-		writeJSON(w, http.StatusConflict, map[string]string{"error":"upload offset mismatch"})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload offset mismatch"})
 	case errors.Is(err, uploads.ErrCompleted):
-		writeJSON(w, http.StatusConflict, map[string]string{"error":"upload session already completed"})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload session already completed"})
 	default:
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error":"upload operation failed"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "upload operation failed"})
 	}
 }
-
-var _ = time.Second
