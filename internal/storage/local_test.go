@@ -1,8 +1,12 @@
 package storage
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +89,110 @@ func TestStableIdentifierPathsRejectTraversalAndNonCanonicalIDs(t *testing.T) {
 	}
 }
 
+func TestWriteFinalizeReadAndTrashLifecycle(t *testing.T) {
+	store, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocal() error = %v", err)
+	}
+	if err := store.EnsureLayout(); err != nil {
+		t.Fatalf("EnsureLayout() error = %v", err)
+	}
+
+	payload := "GoreeCloud Drive atomic payload"
+	written, checksum, err := store.WriteStaging(testSpaceID, testUploadID, strings.NewReader(payload), 1024)
+	if err != nil {
+		t.Fatalf("WriteStaging() error = %v", err)
+	}
+	if written != int64(len(payload)) {
+		t.Fatalf("WriteStaging() bytes = %d, want %d", written, len(payload))
+	}
+	digest := sha256.Sum256([]byte(payload))
+	if checksum != hex.EncodeToString(digest[:]) {
+		t.Fatalf("WriteStaging() checksum = %q", checksum)
+	}
+
+	if err := store.Finalize(testSpaceID, testUploadID, testNodeID); err != nil {
+		t.Fatalf("Finalize() error = %v", err)
+	}
+	staging, _ := store.StagingPath(testSpaceID, testUploadID)
+	if _, err := os.Stat(staging); !os.IsNotExist(err) {
+		t.Fatalf("staging object still exists or stat failed: %v", err)
+	}
+
+	file, err := store.OpenObject(testSpaceID, testNodeID)
+	if err != nil {
+		t.Fatalf("OpenObject() error = %v", err)
+	}
+	got, err := io.ReadAll(file)
+	_ = file.Close()
+	if err != nil {
+		t.Fatalf("read object: %v", err)
+	}
+	if string(got) != payload {
+		t.Fatalf("object payload = %q, want %q", got, payload)
+	}
+
+	if err := store.MoveToTrash(testSpaceID, testNodeID); err != nil {
+		t.Fatalf("MoveToTrash() error = %v", err)
+	}
+	object, _ := store.ObjectPath(testSpaceID, testNodeID)
+	if _, err := os.Stat(object); !os.IsNotExist(err) {
+		t.Fatalf("active object still exists or stat failed: %v", err)
+	}
+	trash, _ := store.TrashPath(testSpaceID, testNodeID)
+	content, err := os.ReadFile(trash)
+	if err != nil {
+		t.Fatalf("read trash object: %v", err)
+	}
+	if string(content) != payload {
+		t.Fatalf("trash payload = %q, want %q", content, payload)
+	}
+}
+
+func TestWriteStagingRejectsOversizeAndDoesNotPublishPartialObject(t *testing.T) {
+	store, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocal() error = %v", err)
+	}
+	if _, _, err := store.WriteStaging(testSpaceID, testUploadID, strings.NewReader("too large"), 3); err == nil {
+		t.Fatal("WriteStaging() unexpectedly accepted oversized payload")
+	}
+	path, _ := store.StagingPath(testSpaceID, testUploadID)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("oversized staging path exists or stat failed: %v", err)
+	}
+}
+
+func TestFinalizeRefusesToOverwriteExistingObject(t *testing.T) {
+	store, err := NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocal() error = %v", err)
+	}
+	if err := store.EnsureLayout(); err != nil {
+		t.Fatalf("EnsureLayout() error = %v", err)
+	}
+	object, _ := store.ObjectPath(testSpaceID, testNodeID)
+	if err := os.MkdirAll(filepath.Dir(object), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(object, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.WriteStaging(testSpaceID, testUploadID, strings.NewReader("new"), 1024); err != nil {
+		t.Fatalf("WriteStaging() error = %v", err)
+	}
+	if err := store.Finalize(testSpaceID, testUploadID, testNodeID); err == nil {
+		t.Fatal("Finalize() unexpectedly overwrote existing object")
+	}
+	got, err := os.ReadFile(object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "existing" {
+		t.Fatalf("existing object changed to %q", got)
+	}
+}
+
 func TestNilLocalFailsClosed(t *testing.T) {
 	var store *Local
 	if err := store.EnsureLayout(); err == nil {
@@ -92,5 +200,8 @@ func TestNilLocalFailsClosed(t *testing.T) {
 	}
 	if _, err := store.ObjectPath(testSpaceID, testNodeID); err == nil {
 		t.Fatal("ObjectPath() unexpectedly succeeded")
+	}
+	if _, _, err := store.WriteStaging(testSpaceID, testUploadID, strings.NewReader("x"), 1); err == nil {
+		t.Fatal("WriteStaging() unexpectedly succeeded")
 	}
 }
