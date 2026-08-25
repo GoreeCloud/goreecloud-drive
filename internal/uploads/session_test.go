@@ -9,7 +9,7 @@ import (
 )
 
 type fakeStore struct {
-	offset int64
+	offset    int64
 	finalized bool
 }
 
@@ -36,13 +36,23 @@ func TestServiceAppendAndComplete(t *testing.T) {
 	service := New(repo, store, 8, time.Hour)
 	ctx := context.Background()
 	session, err := service.Create(ctx, "acct", "space", "node")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	updated, err := service.Append(ctx, "acct", "space", session.ID, 0, bytes.NewBufferString("hello"))
-	if err != nil { t.Fatal(err) }
-	if updated.Offset != 5 { t.Fatalf("offset=%d want 5", updated.Offset) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Offset != 5 {
+		t.Fatalf("offset=%d want 5", updated.Offset)
+	}
 	completed, err := service.Complete(ctx, "acct", "space", session.ID)
-	if err != nil { t.Fatal(err) }
-	if completed.State != StateCompleted || !store.finalized { t.Fatal("expected completed finalized session") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State != StateCompleted || !store.finalized {
+		t.Fatal("expected completed finalized session")
+	}
 }
 
 func TestServiceRejectsWrongOffsetAndOwner(t *testing.T) {
@@ -50,7 +60,13 @@ func TestServiceRejectsWrongOffsetAndOwner(t *testing.T) {
 	service := New(repo, &fakeStore{}, 8, time.Hour)
 	ctx := context.Background()
 	session, err := service.Create(ctx, "acct", "space", "node")
-	if err != nil { t.Fatal(err) }
-	if _, err := service.Append(ctx, "acct", "space", session.ID, 1, bytes.NewBufferString("x")); err != ErrOffsetMismatch { t.Fatalf("err=%v", err) }
-	if _, err := service.Get(ctx, "other", "space", session.ID); err != ErrForbidden { t.Fatalf("err=%v", err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Append(ctx, "acct", "space", session.ID, 1, bytes.NewBufferString("x")); err != ErrOffsetMismatch {
+		t.Fatalf("err=%v", err)
+	}
+	if _, err := service.Get(ctx, "other", "space", session.ID); err != ErrForbidden {
+		t.Fatalf("err=%v", err)
+	}
 }
