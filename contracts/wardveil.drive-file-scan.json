@@ -1,0 +1,51 @@
+{
+  "contract_version": "0.1.0",
+  "consumer": "GoreeCloud Drive",
+  "integration": "Wardveil Scan file-content consumer",
+  "wardveil_runtime_contract_version": "0.1.0",
+  "resource_type": "drive_file",
+  "resource_id_format": "drive:<space_id>:file:<node_id>",
+  "direct_clamav_access_allowed": false,
+  "file_digest_binding_required": true,
+  "authoritative_scan_record_required": true,
+  "clean_requires_current_unexpired_evidence": true,
+  "clean_requires_evidence_refs": true,
+  "lifecycle_actions": [
+    "upload_finalize",
+    "open",
+    "download",
+    "share",
+    "restore_release"
+  ],
+  "result_mapping": {
+    "clean": "allow_only_when_all_validation_passes",
+    "suspicious": "hold_for_review",
+    "malicious": "block_and_request_quarantine",
+    "unknown": "block_unverified",
+    "unsupported": "block_unverified"
+  },
+  "malicious_digest_match_remains_blocking_after_evidence_expiry": true,
+  "upload_finalization": {
+    "scan_before_active_object_publication": true,
+    "rehash_before_release": true,
+    "changed_content_fails_closed": true,
+    "scanner_unavailable_fails_closed": true
+  },
+  "quarantine": {
+    "requires_explicit_executor_authority": true,
+    "is_deletion": false,
+    "private_staging_hold_is_canonical_wardveil_quarantine": false
+  },
+  "everkeep_restore": {
+    "everkeep_restore_verification_remains_required": true,
+    "wardveil_security_verification_required_before_active_release": true,
+    "drive_does_not_replace_everkeep_restore_authority": true
+  },
+  "privacy": {
+    "raw_file_content_in_shared_security_records": false,
+    "user_facing_filename_required_in_cross_service_identity": false,
+    "credentials_or_access_tokens_in_security_records": false,
+    "data_minimization_required": true
+  },
+  "production_runtime_status": "unaccepted"
+}

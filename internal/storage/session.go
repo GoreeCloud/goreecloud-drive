@@ -33,6 +33,29 @@ func (l *Local) Session(spaceID, uploadID string) (Session, error) {
 	return Session{SpaceID: spaceID, UploadID: uploadID, Offset: info.Size()}, nil
 }
 
+// OpenStaging opens a private staged upload for security verification without
+// exposing its filesystem path outside the storage boundary.
+func (l *Local) OpenStaging(spaceID, uploadID string) (io.ReadCloser, error) {
+	path, err := l.StagingPath(spaceID, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open staged upload: %w", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("stat staged upload: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, fmt.Errorf("staged upload is not a regular file")
+	}
+	return file, nil
+}
+
 // AppendStaging appends a bounded chunk only when the caller's expected offset
 // matches durable state. This makes retries idempotent and prevents overlapping
 // writers from silently corrupting a resumable upload.

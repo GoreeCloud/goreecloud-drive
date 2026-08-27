@@ -6,14 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
+
+	"github.com/GoreeCloud/goreecloud-drive/internal/wardveil"
 )
 
 var (
-	ErrNotFound       = errors.New("upload session not found")
-	ErrForbidden      = errors.New("upload session access denied")
-	ErrOffsetMismatch = errors.New("upload offset mismatch")
-	ErrCompleted      = errors.New("upload session already completed")
+	ErrNotFound            = errors.New("upload session not found")
+	ErrForbidden           = errors.New("upload session access denied")
+	ErrOffsetMismatch      = errors.New("upload offset mismatch")
+	ErrCompleted           = errors.New("upload session already completed")
+	ErrSecurityUnavailable = errors.New("upload security verification unavailable")
+	ErrSecurityBlocked     = errors.New("upload blocked by security policy")
 )
 
 type State string
@@ -41,19 +46,38 @@ type Repository interface {
 
 type StagingStore interface {
 	AppendStaging(spaceID, uploadID string, expectedOffset int64, src io.Reader, maxChunkBytes int64) (int64, error)
+	OpenStaging(spaceID, uploadID string) (io.ReadCloser, error)
 	Finalize(spaceID, uploadID, nodeID string) error
 }
+
+type SecurityGate interface {
+	EvaluateUpload(ctx context.Context, spaceID, uploadID, nodeID string) (wardveil.Decision, error)
+}
+
+type SecurityBlockedError struct {
+	Decision wardveil.Decision
+}
+
+func (e *SecurityBlockedError) Error() string {
+	if e == nil {
+		return ErrSecurityBlocked.Error()
+	}
+	return fmt.Sprintf("%s: disposition=%s reasons=%s", ErrSecurityBlocked, e.Decision.Disposition, strings.Join(e.Decision.ReasonCodes, ","))
+}
+
+func (e *SecurityBlockedError) Unwrap() error { return ErrSecurityBlocked }
 
 type Service struct {
 	repo     Repository
 	store    StagingStore
+	security SecurityGate
 	maxChunk int64
 	ttl      time.Duration
 	now      func() time.Time
 }
 
-func New(repo Repository, store StagingStore, maxChunk int64, ttl time.Duration) Service {
-	return Service{repo: repo, store: store, maxChunk: maxChunk, ttl: ttl, now: time.Now}
+func New(repo Repository, store StagingStore, security SecurityGate, maxChunk int64, ttl time.Duration) Service {
+	return Service{repo: repo, store: store, security: security, maxChunk: maxChunk, ttl: ttl, now: time.Now}
 }
 
 func (s Service) Create(ctx context.Context, accountID, spaceID, nodeID string) (Session, error) {
@@ -112,6 +136,16 @@ func (s Service) Complete(ctx context.Context, accountID, spaceID, uploadID stri
 	}
 	if session.State != StateActive {
 		return Session{}, ErrCompleted
+	}
+	if s.security == nil {
+		return session, ErrSecurityUnavailable
+	}
+	decision, err := s.security.EvaluateUpload(ctx, session.SpaceID, session.ID, session.NodeID)
+	if err != nil {
+		return session, fmt.Errorf("%w: %v", ErrSecurityUnavailable, err)
+	}
+	if !decision.CanRelease {
+		return session, &SecurityBlockedError{Decision: decision}
 	}
 	if err := s.store.Finalize(spaceID, uploadID, session.NodeID); err != nil {
 		return Session{}, err

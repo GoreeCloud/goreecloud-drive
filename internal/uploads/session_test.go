@@ -3,13 +3,17 @@ package uploads
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
+
+	"github.com/GoreeCloud/goreecloud-drive/internal/wardveil"
 )
 
 type fakeStore struct {
 	offset    int64
+	content   []byte
 	finalized bool
 }
 
@@ -21,8 +25,13 @@ func (f *fakeStore) AppendStaging(_, _ string, expectedOffset int64, src io.Read
 	if int64(len(body)) > maxChunkBytes {
 		return f.offset, io.ErrShortBuffer
 	}
+	f.content = append(f.content, body...)
 	f.offset += int64(len(body))
 	return f.offset, nil
+}
+
+func (f *fakeStore) OpenStaging(_, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(f.content)), nil
 }
 
 func (f *fakeStore) Finalize(_, _, _ string) error {
@@ -30,10 +39,23 @@ func (f *fakeStore) Finalize(_, _, _ string) error {
 	return nil
 }
 
-func TestServiceAppendAndComplete(t *testing.T) {
+type fakeSecurityGate struct {
+	decision wardveil.Decision
+	err      error
+}
+
+func (g fakeSecurityGate) EvaluateUpload(context.Context, string, string, string) (wardveil.Decision, error) {
+	return g.decision, g.err
+}
+
+func allowGate() SecurityGate {
+	return fakeSecurityGate{decision: wardveil.Decision{Disposition: wardveil.DispositionAllow, CanRelease: true}}
+}
+
+func TestServiceAppendAndCompleteAfterWardveilAllowsRelease(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
-	service := New(repo, store, 8, time.Hour)
+	service := New(repo, store, allowGate(), 8, time.Hour)
 	ctx := context.Background()
 	session, err := service.Create(ctx, "acct", "space", "node")
 	if err != nil {
@@ -55,9 +77,62 @@ func TestServiceAppendAndComplete(t *testing.T) {
 	}
 }
 
+func TestServiceCompleteFailsClosedWithoutSecurityGate(t *testing.T) {
+	repo := NewMemoryRepository()
+	store := &fakeStore{}
+	service := New(repo, store, nil, 8, time.Hour)
+	session, err := service.Create(context.Background(), "acct", "space", "node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityUnavailable) {
+		t.Fatalf("err=%v", err)
+	}
+	if store.finalized {
+		t.Fatal("security-unverified upload must not be finalized")
+	}
+}
+
+func TestServiceCompleteBlocksWardveilDeniedRelease(t *testing.T) {
+	repo := NewMemoryRepository()
+	store := &fakeStore{}
+	gate := fakeSecurityGate{decision: wardveil.Decision{
+		Disposition:        wardveil.DispositionBlockQuarantine,
+		QuarantineRequired: true,
+		ReasonCodes:        []string{"wardveil_malicious_digest_match"},
+	}}
+	service := New(repo, store, gate, 8, time.Hour)
+	session, err := service.Create(context.Background(), "acct", "space", "node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityBlocked) {
+		t.Fatalf("err=%v", err)
+	}
+	if store.finalized {
+		t.Fatal("blocked upload must remain outside active object namespace")
+	}
+}
+
+func TestServiceCompleteFailsClosedWhenScannerUnavailable(t *testing.T) {
+	repo := NewMemoryRepository()
+	store := &fakeStore{}
+	service := New(repo, store, fakeSecurityGate{err: errors.New("Wardveil unavailable")}, 8, time.Hour)
+	session, err := service.Create(context.Background(), "acct", "space", "node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityUnavailable) {
+		t.Fatalf("err=%v", err)
+	}
+	if store.finalized {
+		t.Fatal("upload must not be finalized when Wardveil is unavailable")
+	}
+}
+
 func TestServiceRejectsWrongOffsetAndOwner(t *testing.T) {
 	repo := NewMemoryRepository()
-	service := New(repo, &fakeStore{}, 8, time.Hour)
+	service := New(repo, &fakeStore{}, allowGate(), 8, time.Hour)
 	ctx := context.Background()
 	session, err := service.Create(ctx, "acct", "space", "node")
 	if err != nil {

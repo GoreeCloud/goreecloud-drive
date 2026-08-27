@@ -25,7 +25,8 @@ type UploadService interface {
 }
 
 // NewWithUploads extends the core Drive API with resumable upload routes while
-// retaining the same fail-closed authentication, authorization, and node checks.
+// retaining the same fail-closed authentication, authorization, node, and
+// Wardveil file-security checks.
 func NewWithUploads(cfg config.Config, logger *slog.Logger, deps Dependencies, uploadService UploadService) *Server {
 	server := NewWithDependencies(cfg, logger, deps)
 	if uploadService == nil {
@@ -147,6 +148,10 @@ func writeUploadError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload offset mismatch"})
 	case errors.Is(err, uploads.ErrCompleted):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload session already completed"})
+	case errors.Is(err, uploads.ErrSecurityBlocked):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "upload blocked by security policy"})
+	case errors.Is(err, uploads.ErrSecurityUnavailable):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "upload security verification unavailable"})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "upload operation failed"})
 	}

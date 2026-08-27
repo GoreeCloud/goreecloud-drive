@@ -17,6 +17,25 @@ func TestWriteUploadErrorMapsOffsetConflict(t *testing.T) {
 	}
 }
 
+func TestWriteUploadErrorMapsSecurityBlockedWithoutLeakingEvidence(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeUploadError(recorder, uploads.ErrSecurityBlocked)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d want %d", recorder.Code, http.StatusUnprocessableEntity)
+	}
+	if recorder.Body.String() != "{\"error\":\"upload blocked by security policy\"}\n" {
+		t.Fatalf("unexpected response body %q", recorder.Body.String())
+	}
+}
+
+func TestWriteUploadErrorMapsSecurityUnavailable(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeUploadError(recorder, uploads.ErrSecurityUnavailable)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+}
+
 func TestWriteUploadErrorMapsUnknownFailure(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	writeUploadError(recorder, errors.New("boom"))

@@ -6,19 +6,23 @@ Privacy-first, multi-user self-hosted cloud storage and file-management platform
 
 GoreeCloud Drive is the first-party file-cloud experience for GoreeCloud. Its product boundary is **Drive owns files; Sync moves them.** Drive owns file/folder semantics, Spaces, ownership, authorization, sharing, versions, Trash, metadata, quotas, activity, search/preview policy, and the user-facing file experience. GoreeCloud Sync owns transfer and replication workflows between endpoints.
 
-## Milestone 0
+## Current foundation
 
 The current foundation establishes:
 
 - a Go HTTP service with safe defaults, health/readiness, structured logging, security headers, and graceful shutdown;
 - an ownership-first PostgreSQL schema designed for multi-user accounts and Spaces;
 - development storage separation for finalized objects, staging, and Trash;
+- resumable-upload service primitives with a fail-closed Wardveil Scan publication gate;
+- exact `drive_file` resource and SHA-256 binding for Wardveil findings, with current authoritative clean evidence required before release;
 - a versioned first-party OpenAPI boundary;
 - a responsive Glaze UI foundation shell that clearly marks unfinished capabilities;
 - repository-local product, architecture, security, storage, contribution, and competitive-objective records;
-- automated formatting, vetting, race-enabled tests, and coverage generation in CI.
+- automated formatting, vetting, race-enabled tests, contract checks, and coverage generation in CI.
 
-Authentication, production file operations, sharing, Sync transfers, Private Spaces, native clients, production deployment, and Stable acceptance are **not** claimed by Milestone 0.
+Drive consumes Wardveil Security rather than connecting directly to ClamAV. Suspicious, malicious, unknown, unsupported, stale, mismatched, or unavailable scan evidence fails closed at the upload-finalization boundary. See [`docs/WARDVEIL-SCANNING.md`](docs/WARDVEIL-SCANNING.md).
+
+Authentication, production file operations, sharing, Sync transfers, Private Spaces, native clients, deployed Wardveil transport, production malware protection, production deployment, and Stable acceptance are **not** claimed by this source milestone.
 
 ## Quick start
 
@@ -37,14 +41,16 @@ The server intentionally binds to loopback by default. A non-loopback bind requi
 
 - [`api/`](api/) — first-party API contract.
 - [`cmd/server/`](cmd/server/) — service entry point.
-- [`internal/`](internal/) — runtime configuration, HTTP and storage boundaries.
+- [`internal/`](internal/) — runtime configuration, HTTP, storage, upload, and Wardveil consumer boundaries.
+- [`contracts/wardveil.drive-file-scan.json`](contracts/wardveil.drive-file-scan.json) — Drive's source consumer contract for Wardveil Scan.
 - [`migrations/`](migrations/) — PostgreSQL schema evolution.
 - [`web/`](web/) — Glaze UI foundation shell.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system and suite boundaries.
 - [`docs/SECURITY.md`](docs/SECURITY.md) — security architecture.
+- [`docs/WARDVEIL-SCANNING.md`](docs/WARDVEIL-SCANNING.md) — file-security integration and acceptance boundary.
 - [`docs/STORAGE.md`](docs/STORAGE.md) — data authority and storage model.
 - [`COMPETITIVE-OBJECTIVES.md`](COMPETITIVE-OBJECTIVES.md), [`FEATURES.md`](FEATURES.md), [`BENEFITS.md`](BENEFITS.md) — maintained product direction and capability records.
-- [`artwork/`](artwork/) — canonical official-artwork location; final approved assets remain a release blocker until added.
+- [`artwork/`](artwork/) — canonical official-artwork location.
 
 ## Governing principles
 
