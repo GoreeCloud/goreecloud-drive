@@ -1,0 +1,147 @@
+name: Deploy Drive Wardveil quarantine target
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact main commit SHA approved for deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drive-wardveil-quarantine-target-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-probe:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: drive-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DRIVE_QUARANTINE_ORIGIN: ${{ secrets.DRIVE_QUARANTINE_ORIGIN }}
+      DRIVE_QUARANTINE_SERVICE_TOKEN: ${{ secrets.DRIVE_QUARANTINE_SERVICE_TOKEN }}
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify approved main revision
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_SHA"
+          test "$GITHUB_SHA" = "$EXPECTED_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$GITHUB_REF" = "refs/heads/main"
+
+      - name: Verify deployment secrets and origin boundary
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$DRIVE_QUARANTINE_ORIGIN"
+          test -n "$DRIVE_QUARANTINE_SERVICE_TOKEN"
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+
+          raw = os.environ['DRIVE_QUARANTINE_ORIGIN']
+          parsed = urlparse(raw)
+          if parsed.scheme != 'https' or not parsed.hostname:
+              raise SystemExit('DRIVE_QUARANTINE_ORIGIN must be an HTTPS origin')
+          if parsed.username or parsed.password or parsed.query or parsed.fragment:
+              raise SystemExit('DRIVE_QUARANTINE_ORIGIN must not contain credentials, query, or fragment')
+          if parsed.path not in ('', '/'):
+              raise SystemExit('DRIVE_QUARANTINE_ORIGIN must not contain an application path')
+          PY
+
+      - name: Install exact Wrangler release
+        working-directory: cloudflare/quarantine-target
+        run: npm install --no-save --ignore-scripts wrangler@4.37.0
+
+      - name: Generate ephemeral production Worker config
+        working-directory: cloudflare/quarantine-target
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = json.loads(Path('wrangler.jsonc').read_text())
+          source['vars']['DRIVE_QUARANTINE_ORIGIN'] = os.environ['DRIVE_QUARANTINE_ORIGIN']
+          Path('wrangler.production.generated.jsonc').write_text(json.dumps(source, indent=2) + '\n')
+          PY
+          grep -q '"workers_dev": false' wrangler.production.generated.jsonc
+          grep -q '"preview_urls": false' wrangler.production.generated.jsonc
+          ! grep -q 'replace-at-deployment.invalid' wrangler.production.generated.jsonc
+
+      - name: Deploy Drive quarantine target Worker
+        working-directory: cloudflare/quarantine-target
+        run: npx wrangler deploy --config wrangler.production.generated.jsonc
+
+      - name: Provision Drive service token secret
+        working-directory: cloudflare/quarantine-target
+        run: |
+          set -euo pipefail
+          printf '%s' "$DRIVE_QUARANTINE_SERVICE_TOKEN" \
+            | npx wrangler secret put DRIVE_QUARANTINE_SERVICE_TOKEN --config wrangler.production.generated.jsonc
+
+      - name: Start local-only acceptance runner with remote service binding
+        working-directory: cloudflare/quarantine-target
+        run: |
+          set -euo pipefail
+          npx wrangler dev --config acceptance-runner/wrangler.jsonc --ip 127.0.0.1 --port 8790 > /tmp/drive-quarantine-target-runner.log 2>&1 &
+          echo $! > /tmp/drive-quarantine-target-runner.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8790/healthz > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/drive-quarantine-target-runner.log >&2
+          exit 1
+
+      - name: Verify non-mutating Drive readback through target Worker
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /tmp/drive-quarantine-target-probe.json --write-out '%{http_code}' --request POST http://127.0.0.1:8790/run)"
+          cat /tmp/drive-quarantine-target-probe.json
+          test "$code" = "200"
+          grep -q '"accepted":true' /tmp/drive-quarantine-target-probe.json
+          grep -q '"mutation_performed":false' /tmp/drive-quarantine-target-probe.json
+          grep -q '"status":"not_quarantined"' /tmp/drive-quarantine-target-probe.json
+
+      - name: Record deployment boundary
+        run: |
+          {
+            echo '## Drive Wardveil quarantine target deployment'
+            echo
+            echo "- Source/deployed revision: \`$GITHUB_SHA\`"
+            echo '- Target Worker: `goreecloud-drive-quarantine-target`'
+            echo '- Public Workers.dev route: disabled'
+            echo '- Preview URLs: disabled'
+            echo '- Drive service token: provisioned as encrypted Worker secret'
+            echo '- Remote service-binding readback: passed'
+            echo '- Probe mutation performed: false'
+            echo '- Production quarantine acceptance: **unaccepted** until a controlled authorized quarantine mutation/readback and the remaining Wardveil production requirements are evidenced'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up local and generated deployment state
+        if: always()
+        working-directory: cloudflare/quarantine-target
+        run: |
+          if [ -f /tmp/drive-quarantine-target-runner.pid ]; then
+            kill "$(cat /tmp/drive-quarantine-target-runner.pid)" || true
+          fi
+          rm -f wrangler.production.generated.jsonc
+          rm -rf node_modules
