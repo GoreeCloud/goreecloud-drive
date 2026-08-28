@@ -37,7 +37,7 @@ func (l *Local) EnsureLayout() error {
 	if l == nil || l.root == "" {
 		return fmt.Errorf("storage backend is unavailable")
 	}
-	for _, name := range []string{"objects", "staging", "trash"} {
+	for _, name := range []string{"objects", "staging", "trash", "quarantine", "quarantine-state"} {
 		if err := os.MkdirAll(filepath.Join(l.root, name), 0o700); err != nil {
 			return fmt.Errorf("create %s directory: %w", name, err)
 		}
