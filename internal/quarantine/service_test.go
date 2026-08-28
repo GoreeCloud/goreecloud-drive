@@ -11,11 +11,11 @@ import (
 const testResourceID = "drive:11111111-1111-1111-1111-111111111111:file:22222222-2222-2222-2222-222222222222"
 
 type fakeStore struct {
-	state   storage.QuarantineState
-	replay  bool
+	state    storage.QuarantineState
+	replay   bool
 	applyErr error
-	found   bool
-	readErr error
+	found    bool
+	readErr  error
 }
 
 func (f *fakeStore) ApplyQuarantine(_, _, _, _ string) (storage.QuarantineState, bool, error) {
