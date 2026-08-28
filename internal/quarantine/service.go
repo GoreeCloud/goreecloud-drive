@@ -41,6 +41,11 @@ type ReadResult struct {
 	EvidenceRef string `json:"evidence_ref,omitempty"`
 }
 
+type Target interface {
+	Apply(context.Context, ApplyRequest) ApplyResult
+	Read(context.Context, ReadRequest) ReadResult
+}
+
 type Store interface {
 	ApplyQuarantine(spaceID, nodeID, operationID, correlationID string) (storage.QuarantineState, bool, error)
 	ReadQuarantine(spaceID, nodeID string) (storage.QuarantineState, bool, error)
