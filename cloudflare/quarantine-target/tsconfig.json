@@ -8,5 +8,5 @@
     "noEmit": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "acceptance-runner/src/**/*.ts"]
 }
