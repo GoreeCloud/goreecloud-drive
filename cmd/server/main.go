@@ -12,6 +12,7 @@ import (
 
 	"github.com/GoreeCloud/goreecloud-drive/internal/config"
 	"github.com/GoreeCloud/goreecloud-drive/internal/httpapi"
+	"github.com/GoreeCloud/goreecloud-drive/internal/quarantine"
 	"github.com/GoreeCloud/goreecloud-drive/internal/storage"
 )
 
@@ -34,7 +35,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := httpapi.New(cfg, logger)
+	server := httpapi.NewWithDependencies(cfg, logger, httpapi.Dependencies{
+		Quarantine:           quarantine.New(store),
+		WardveilServiceToken: cfg.WardveilServiceToken,
+	})
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("server starting", "bind", cfg.Bind, "lifecycle", "Development")

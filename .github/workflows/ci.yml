@@ -46,6 +46,20 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
+      - name: Validate Wardveil quarantine target contract
+        run: python3 scripts/validate_wardveil_quarantine_target.py
+      - name: Type-check Drive quarantine target Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp" cloudflare/quarantine-target/node_modules' EXIT
+          cd "$tmp"
+          npm init -y >/dev/null 2>&1
+          npm install --ignore-scripts --no-save --package-lock=false typescript@5.9.2 @cloudflare/workers-types@5.20260827.1 >/dev/null
+          cd "$GITHUB_WORKSPACE"
+          ln -s "$tmp/node_modules" cloudflare/quarantine-target/node_modules
+          "$tmp/node_modules/.bin/tsc" --noEmit -p cloudflare/quarantine-target/tsconfig.json
 
   postgres:
     name: PostgreSQL schema isolation

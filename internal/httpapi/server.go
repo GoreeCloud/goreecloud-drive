@@ -17,6 +17,7 @@ import (
 	"github.com/GoreeCloud/goreecloud-drive/internal/authz"
 	"github.com/GoreeCloud/goreecloud-drive/internal/config"
 	"github.com/GoreeCloud/goreecloud-drive/internal/nodes"
+	"github.com/GoreeCloud/goreecloud-drive/internal/quarantine"
 	"github.com/GoreeCloud/goreecloud-drive/internal/spaceaccess"
 )
 
@@ -24,11 +25,13 @@ const developmentVersion = "0.0.0-dev"
 
 // Dependencies are security-sensitive runtime boundaries injected into the HTTP
 // service. The default constructor intentionally supplies no trusted identity,
-// membership source, or persistent node repository.
+// membership source, persistent node repository, or Wardveil mutation target.
 type Dependencies struct {
-	Principals  authn.Resolver
-	Memberships spaceaccess.MembershipResolver
-	Nodes       nodes.Repository
+	Principals           authn.Resolver
+	Memberships          spaceaccess.MembershipResolver
+	Nodes                nodes.Repository
+	Quarantine           quarantine.Target
+	WardveilServiceToken string
 }
 
 // Server wraps the standard library HTTP server so startup and shutdown stay
@@ -43,7 +46,7 @@ func New(cfg config.Config, logger *slog.Logger) *Server {
 }
 
 // NewWithDependencies constructs the development API with explicit trusted
-// authentication, membership, and persistence boundaries.
+// authentication, membership, persistence, and internal Wardveil boundaries.
 func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependencies) *Server {
 	if deps.Principals == nil {
 		deps.Principals = authn.DenyAllResolver{}
@@ -65,6 +68,8 @@ func NewWithDependencies(cfg config.Config, logger *slog.Logger, deps Dependenci
 	mux.HandleFunc("GET /api/v1/spaces/{spaceID}/nodes/{nodeID}", getNodeHandler(deps.Principals, nodeService))
 	mux.HandleFunc("PATCH /api/v1/spaces/{spaceID}/nodes/{nodeID}", renameNodeHandler(deps.Principals, nodeService))
 	mux.HandleFunc("DELETE /api/v1/spaces/{spaceID}/nodes/{nodeID}", trashNodeHandler(deps.Principals, nodeService))
+	mux.HandleFunc("POST /internal/v1/wardveil/quarantine/apply", quarantineApplyHandler(deps.Quarantine, deps.WardveilServiceToken))
+	mux.HandleFunc("POST /internal/v1/wardveil/quarantine/read", quarantineReadHandler(deps.Quarantine, deps.WardveilServiceToken))
 	mux.Handle("/", http.FileServer(http.Dir(cfg.WebDir)))
 
 	handler := requestLogging(logger, securityHeaders(requestID(mux)))

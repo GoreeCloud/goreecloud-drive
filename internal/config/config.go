@@ -11,20 +11,22 @@ import (
 
 // Config contains the minimum runtime settings for the development service.
 type Config struct {
-	Bind            string
-	DataDir         string
-	WebDir          string
-	AllowPublicBind bool
-	ShutdownTimeout time.Duration
+	Bind                 string
+	DataDir              string
+	WebDir               string
+	AllowPublicBind      bool
+	ShutdownTimeout      time.Duration
+	WardveilServiceToken string
 }
 
 // Load reads environment configuration and rejects unsafe or malformed values.
 func Load() (Config, error) {
 	cfg := Config{
-		Bind:            envOr("GC_DRIVE_BIND", "127.0.0.1:8080"),
-		DataDir:         envOr("GC_DRIVE_DATA_DIR", "./data"),
-		WebDir:          envOr("GC_DRIVE_WEB_DIR", "./web"),
-		ShutdownTimeout: 10 * time.Second,
+		Bind:                 envOr("GC_DRIVE_BIND", "127.0.0.1:8080"),
+		DataDir:              envOr("GC_DRIVE_DATA_DIR", "./data"),
+		WebDir:               envOr("GC_DRIVE_WEB_DIR", "./web"),
+		ShutdownTimeout:      10 * time.Second,
+		WardveilServiceToken: os.Getenv("GC_DRIVE_WARDVEIL_SERVICE_TOKEN"),
 	}
 
 	if raw := os.Getenv("GC_DRIVE_ALLOW_PUBLIC_BIND"); raw != "" {

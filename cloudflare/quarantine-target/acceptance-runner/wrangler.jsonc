@@ -1,0 +1,14 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "goreecloud-drive-quarantine-target-acceptance-runner",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "services": [
+    {
+      "binding": "DRIVE_QUARANTINE_TARGET",
+      "service": "goreecloud-drive-quarantine-target",
+      "remote": true
+    }
+  ]
+}

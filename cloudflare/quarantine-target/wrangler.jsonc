@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "goreecloud-drive-quarantine-target",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "DRIVE_QUARANTINE_ORIGIN": "https://replace-at-deployment.invalid"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1.0
+  }
+}

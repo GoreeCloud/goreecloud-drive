@@ -1,0 +1,45 @@
+{
+  "contract_version": "0.1.0",
+  "component": "GoreeCloud Drive Wardveil quarantine target",
+  "owner": "GoreeCloud Drive",
+  "resource_type": "drive_file",
+  "resource_id_format": "drive:<space_id>:file:<node_id>",
+  "wardveil_action": "quarantine",
+  "target_worker": "goreecloud-drive-quarantine-target",
+  "target_worker_public_http_mutation_allowed": false,
+  "workers_dev_enabled": false,
+  "preview_urls_enabled": false,
+  "drive_backend_routes": {
+    "apply": "/internal/v1/wardveil/quarantine/apply",
+    "read": "/internal/v1/wardveil/quarantine/read",
+    "dedicated_service_authorization_required": true,
+    "missing_service_authorization_fails_closed": true
+  },
+  "storage": {
+    "active_namespace": "objects",
+    "quarantine_namespace": "quarantine",
+    "operation_state_namespace": "quarantine-state",
+    "pending_state_precedes_side_effect": true,
+    "exact_operation_replay_is_idempotent": true,
+    "conflicting_operation_fails_closed": true,
+    "payload_state_disagreement_requires_reconciliation": true,
+    "quarantine_is_deletion": false
+  },
+  "privacy": {
+    "shared_identity_uses_internal_space_and_node_ids": true,
+    "user_facing_filename_required": false,
+    "raw_file_content_in_quarantine_state": false,
+    "credentials_or_tokens_in_quarantine_state": false
+  },
+  "everkeep_recovery_authority_preserved": true,
+  "deployment": {
+    "exact_main_revision_required": true,
+    "cloudflare_credentials_required": true,
+    "https_drive_origin_required": true,
+    "drive_service_token_secret_required": true,
+    "non_mutating_remote_readback_required": true,
+    "controlled_authorized_mutation_readback_required_for_acceptance": true
+  },
+  "production_runtime_status": "unaccepted",
+  "production_protection_claim_allowed": false
+}
