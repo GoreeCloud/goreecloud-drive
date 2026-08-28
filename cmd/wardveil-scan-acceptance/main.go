@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -83,14 +85,15 @@ func run() error {
 		result.AuthenticatedCleanRelease = true
 	}
 
-	eicarDecision, err := evaluate(ctx, scanner, eicarBytes(), "eicar-node")
+	eicar := eicarBytes()
+	eicarDecision, err := evaluate(ctx, scanner, eicar, "eicar-node")
 	if err == nil && !eicarDecision.CanRelease && eicarDecision.QuarantineRequired && eicarDecision.Disposition == wardveil.DispositionBlockQuarantine {
 		result.EICARBlockedQuarantine = true
 		resource := wardveil.FileResource{
 			SpaceID:      acceptanceSpaceID,
 			NodeID:       "eicar-node",
-			DigestSHA256: digestFor(eicarBytes()),
-			SizeBytes:    int64(len(eicarBytes())),
+			DigestSHA256: digestFor(eicar),
+			SizeBytes:    int64(len(eicar)),
 		}
 		handoff, ok := eicarDecision.QuarantineHandoff(resource)
 		if ok && handoff.RequiresExplicitExecutorAuthority && !handoff.DestructiveAction && handoff.ResourceID == resource.ResourceID() && strings.EqualFold(handoff.DigestSHA256, resource.DigestSHA256) {
@@ -170,27 +173,8 @@ func eicarBytes() []byte {
 }
 
 func digestFor(content []byte) string {
-	request := scanRequest(content)
-	return request.DigestSHA256
-}
-
-func scanRequest(content []byte) wardveil.ScanRequest {
-	store := memoryStaging{content: content}
-	reader, _ := store.OpenStaging("", "")
-	defer reader.Close()
-	return wardveil.ScanRequest{
-		ResourceType: wardveil.DriveFileResourceType,
-		DigestSHA256: sha256Reader(reader),
-		SizeBytes:    int64(len(content)),
-		Action:       wardveil.ActionUploadFinalize,
-	}
-}
-
-func sha256Reader(reader io.Reader) string {
-	// Keep digest construction identical to the StagedFileGate without exporting its helper.
-	hash := sha256.New()
-	_, _ = io.Copy(hash, reader)
-	return hex.EncodeToString(hash.Sum(nil))
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
 
 func wrongToken(token string) string {
