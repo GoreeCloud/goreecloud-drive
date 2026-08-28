@@ -2,6 +2,10 @@ package wardveil
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,29 +13,43 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
 	WardveilScanPath             = "/v1/scan"
+	WardveilScanContractVersion  = "0.1.0"
 	defaultScanTimeout           = 35 * time.Second
 	defaultMaxScanResponseBytes  = int64(1 << 20)
-	minimumScanServiceTokenBytes = 32
+	minimumScanCallerSecretBytes = 32
+	defaultScanCallerID          = "goreecloud-drive"
+	defaultScanKeyID             = "scan-current"
 )
 
 type HTTPScannerConfig struct {
 	Endpoint         string
-	Token            string
+	CallerID         string
+	KeyID            string
+	Secret           string
 	Timeout          time.Duration
 	MaxResponseBytes int64
+	Now              func() time.Time
+	Nonce            func() (string, error)
+	CorrelationID    func() (string, error)
 }
 
 type HTTPScanner struct {
 	endpoint         *url.URL
-	token            string
+	callerID         string
+	keyID            string
+	secret           []byte
 	client           *http.Client
 	maxResponseBytes int64
+	now              func() time.Time
+	nonce            func() (string, error)
+	correlationID    func() (string, error)
 }
 
 type scanRecordWire struct {
@@ -43,8 +61,8 @@ type scanRecordWire struct {
 	Scope           Scope     `json:"scope"`
 	ObservedAt      time.Time `json:"observed_at"`
 	ValidUntil      time.Time `json:"valid_until"`
+	Result          Result    `json:"result"`
 	EvidenceRefs    []string  `json:"evidence_refs"`
-	ScanResult      Result    `json:"scan_result"`
 }
 
 type scanEnvelopeWire struct {
@@ -58,8 +76,19 @@ func NewHTTPScanner(cfg HTTPScannerConfig) (*HTTPScanner, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Token != strings.TrimSpace(cfg.Token) || len([]byte(cfg.Token)) < minimumScanServiceTokenBytes {
-		return nil, errors.New("Wardveil Scan service token must be at least 32 bytes with no surrounding whitespace")
+	callerID := cfg.CallerID
+	if callerID == "" {
+		callerID = defaultScanCallerID
+	}
+	keyID := cfg.KeyID
+	if keyID == "" {
+		keyID = defaultScanKeyID
+	}
+	if !validScanToken(callerID) || !validScanToken(keyID) {
+		return nil, errors.New("Wardveil Scan caller or key identity invalid")
+	}
+	if cfg.Secret != strings.TrimSpace(cfg.Secret) || len([]byte(cfg.Secret)) < minimumScanCallerSecretBytes {
+		return nil, errors.New("Wardveil Scan caller secret must be at least 32 bytes with no surrounding whitespace")
 	}
 
 	timeout := cfg.Timeout
@@ -77,6 +106,19 @@ func NewHTTPScanner(cfg HTTPScannerConfig) (*HTTPScanner, error) {
 		return nil, errors.New("Wardveil Scan response limit must be positive")
 	}
 
+	now := cfg.Now
+	if now == nil {
+		now = func() time.Time { return time.Now().UTC() }
+	}
+	nonce := cfg.Nonce
+	if nonce == nil {
+		nonce = func() (string, error) { return randomScanToken("drive-nonce") }
+	}
+	correlationID := cfg.CorrelationID
+	if correlationID == nil {
+		correlationID = func() (string, error) { return randomScanToken("drive-scan") }
+	}
+
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	client := &http.Client{
@@ -88,9 +130,14 @@ func NewHTTPScanner(cfg HTTPScannerConfig) (*HTTPScanner, error) {
 	}
 	return &HTTPScanner{
 		endpoint:         endpoint,
-		token:            cfg.Token,
+		callerID:         callerID,
+		keyID:            keyID,
+		secret:           []byte(cfg.Secret),
 		client:           client,
 		maxResponseBytes: maxResponseBytes,
+		now:              now,
+		nonce:            nonce,
+		correlationID:    correlationID,
 	}, nil
 }
 
@@ -119,7 +166,7 @@ func validateScanEndpoint(raw string) (*url.URL, error) {
 }
 
 func (s *HTTPScanner) Scan(ctx context.Context, request ScanRequest, body io.Reader) (ScanEnvelope, error) {
-	if s == nil || s.endpoint == nil || s.client == nil {
+	if s == nil || s.endpoint == nil || s.client == nil || s.now == nil || s.nonce == nil || s.correlationID == nil {
 		return ScanEnvelope{}, errors.New("Wardveil Scan HTTP client unavailable")
 	}
 	if body == nil {
@@ -132,18 +179,47 @@ func (s *HTTPScanner) Scan(ctx context.Context, request ScanRequest, body io.Rea
 		return ScanEnvelope{}, errors.New("Wardveil Scan request metadata invalid")
 	}
 
+	timestamp := s.now().UTC().Format(time.RFC3339Nano)
+	nonce, err := s.nonce()
+	if err != nil || !validScanToken(nonce) {
+		return ScanEnvelope{}, errors.New("generate Wardveil Scan nonce")
+	}
+	correlationID, err := s.correlationID()
+	if err != nil || !validScanToken(correlationID) {
+		return ScanEnvelope{}, errors.New("generate Wardveil Scan correlation ID")
+	}
+	digest := strings.ToLower(request.DigestSHA256)
+	signature := signScanRequest(
+		s.secret,
+		s.callerID,
+		s.keyID,
+		timestamp,
+		nonce,
+		string(request.Action),
+		request.ResourceType,
+		request.ResourceID,
+		correlationID,
+		request.SizeBytes,
+		digest,
+	)
+
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint.String(), body)
 	if err != nil {
 		return ScanEnvelope{}, fmt.Errorf("create Wardveil Scan request: %w", err)
 	}
 	httpRequest.ContentLength = request.SizeBytes
-	httpRequest.Header.Set("Authorization", "Bearer "+s.token)
 	httpRequest.Header.Set("Content-Type", "application/octet-stream")
+	httpRequest.Header.Set("X-Wardveil-Caller-ID", s.callerID)
+	httpRequest.Header.Set("X-Wardveil-Key-ID", s.keyID)
+	httpRequest.Header.Set("X-Wardveil-Timestamp", timestamp)
+	httpRequest.Header.Set("X-Wardveil-Nonce", nonce)
 	httpRequest.Header.Set("X-Wardveil-Resource-Type", request.ResourceType)
 	httpRequest.Header.Set("X-Wardveil-Resource-ID", request.ResourceID)
-	httpRequest.Header.Set("X-Wardveil-Digest-SHA256", request.DigestSHA256)
-	httpRequest.Header.Set("X-Wardveil-Size-Bytes", fmt.Sprintf("%d", request.SizeBytes))
+	httpRequest.Header.Set("X-Wardveil-Digest-SHA256", digest)
+	httpRequest.Header.Set("X-Wardveil-Size-Bytes", strconv.FormatInt(request.SizeBytes, 10))
 	httpRequest.Header.Set("X-Wardveil-Action", string(request.Action))
+	httpRequest.Header.Set("X-Wardveil-Correlation-ID", correlationID)
+	httpRequest.Header.Set("X-Wardveil-Signature", signature)
 
 	response, err := s.client.Do(httpRequest)
 	if err != nil {
@@ -175,6 +251,9 @@ func (s *HTTPScanner) Scan(ctx context.Context, request ScanRequest, body io.Rea
 	if err := ensureJSONEOF(decoder); err != nil {
 		return ScanEnvelope{}, err
 	}
+	if wire.ScanRecord.CorrelationID != correlationID {
+		return ScanEnvelope{}, errors.New("Wardveil Scan response correlation mismatch")
+	}
 
 	return ScanEnvelope{
 		ResourceID:           wire.ResourceID,
@@ -187,10 +266,58 @@ func (s *HTTPScanner) Scan(ctx context.Context, request ScanRequest, body io.Rea
 			Scope:           wire.ScanRecord.Scope,
 			ObservedAt:      wire.ScanRecord.ObservedAt,
 			ValidUntil:      wire.ScanRecord.ValidUntil,
-			Result:          wire.ScanRecord.ScanResult,
+			Result:          wire.ScanRecord.Result,
 			EvidenceRefs:    append([]string(nil), wire.ScanRecord.EvidenceRefs...),
 		},
 	}, nil
+}
+
+func signScanRequest(
+	secret []byte,
+	callerID, keyID, timestamp, nonce, action, resourceType, resourceID, correlationID string,
+	sizeBytes int64,
+	digestSHA256 string,
+) string {
+	material := strings.Join([]string{
+		WardveilScanContractVersion,
+		callerID,
+		keyID,
+		timestamp,
+		nonce,
+		action,
+		resourceType,
+		resourceID,
+		correlationID,
+		strconv.FormatInt(sizeBytes, 10),
+		digestSHA256,
+	}, "\n")
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte(material))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func randomScanToken(prefix string) (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return prefix + "-" + hex.EncodeToString(raw[:]), nil
+}
+
+func validScanToken(value string) bool {
+	if len(value) < 1 || len(value) > 256 {
+		return false
+	}
+	for i, char := range value {
+		if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '.' || char == '_' || char == ':' || char == '-' {
+			if i == 0 && !((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) {
+				return false
+			}
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func ensureJSONEOF(decoder *json.Decoder) error {
