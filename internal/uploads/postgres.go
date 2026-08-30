@@ -19,14 +19,14 @@ func (r PostgresRepository) Create(ctx context.Context, session Session) error {
 	}
 	_, err := r.DB.ExecContext(ctx, `
 INSERT INTO upload_sessions (
-    id, space_id, account_id, node_id, target_name, expected_size_bytes,
+    id, space_id, parent_node_id, account_id, target_name, expected_size_bytes,
     received_size_bytes, staging_key, state, expires_at
-) VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9)`,
+) VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, NULL, $6, $7, $8, $9)`,
 		session.ID,
 		session.SpaceID,
+		session.ParentNodeID,
 		session.AccountID,
-		session.NodeID,
-		session.NodeID,
+		session.TargetName,
 		session.Offset,
 		session.ID,
 		stateToDatabase(session.State),
@@ -43,15 +43,17 @@ func (r PostgresRepository) Get(ctx context.Context, uploadID string) (Session, 
 		return Session{}, fmt.Errorf("upload repository unavailable")
 	}
 	var session Session
+	var parentNodeID sql.NullString
 	var state string
 	err := r.DB.QueryRowContext(ctx, `
-SELECT id, space_id, account_id, node_id, received_size_bytes, state, expires_at
+SELECT id, space_id, parent_node_id::text, account_id, target_name, received_size_bytes, state, expires_at
 FROM upload_sessions
 WHERE id = $1`, uploadID).Scan(
 		&session.ID,
 		&session.SpaceID,
+		&parentNodeID,
 		&session.AccountID,
-		&session.NodeID,
+		&session.TargetName,
 		&session.Offset,
 		&state,
 		&session.ExpiresAt,
@@ -61,6 +63,9 @@ WHERE id = $1`, uploadID).Scan(
 	}
 	if err != nil {
 		return Session{}, fmt.Errorf("get upload session: %w", err)
+	}
+	if parentNodeID.Valid {
+		session.ParentNodeID = parentNodeID.String
 	}
 	session.State = stateFromDatabase(state)
 	return session, nil
@@ -74,13 +79,15 @@ func (r PostgresRepository) Update(ctx context.Context, session Session) error {
 UPDATE upload_sessions
 SET received_size_bytes = $2,
     state = $3,
-    node_id = $4,
+    parent_node_id = NULLIF($4, '')::uuid,
+    target_name = $5,
     updated_at = now()
 WHERE id = $1`,
 		session.ID,
 		session.Offset,
 		stateToDatabase(session.State),
-		session.NodeID,
+		session.ParentNodeID,
+		session.TargetName,
 	)
 	if err != nil {
 		return fmt.Errorf("update upload session: %w", err)
