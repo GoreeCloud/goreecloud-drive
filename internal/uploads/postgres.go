@@ -19,16 +19,18 @@ func (r PostgresRepository) Create(ctx context.Context, session Session) error {
 	}
 	_, err := r.DB.ExecContext(ctx, `
 INSERT INTO upload_sessions (
-    id, space_id, account_id, node_id, offset_bytes, state, expires_at, staging_key
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    id, space_id, account_id, node_id, target_name, expected_size_bytes,
+    received_size_bytes, staging_key, state, expires_at
+) VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9)`,
 		session.ID,
 		session.SpaceID,
 		session.AccountID,
 		session.NodeID,
+		session.NodeID,
 		session.Offset,
-		string(session.State),
-		session.ExpiresAt,
 		session.ID,
+		stateToDatabase(session.State),
+		session.ExpiresAt,
 	)
 	if err != nil {
 		return fmt.Errorf("create upload session: %w", err)
@@ -72,8 +74,8 @@ func (r PostgresRepository) Update(ctx context.Context, session Session) error {
 UPDATE upload_sessions
 SET received_size_bytes = $2,
     state = $3,
-    updated_at = now(),
-    finalized_node_id = CASE WHEN $3 = 'complete' THEN $4 ELSE finalized_node_id END
+    node_id = $4,
+    updated_at = now()
 WHERE id = $1`,
 		session.ID,
 		session.Offset,
