@@ -25,33 +25,33 @@ import (
 const eicar = `X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`
 
 type evidence struct {
-	Component                     string         `json:"component"`
-	DriveRevision                 string         `json:"drive_revision"`
-	WardveilEndpoint              string         `json:"wardveil_endpoint"`
-	ApplicationConsumerIntegration string         `json:"application_consumer_integration"`
-	CleanUploadFinalize           caseEvidence   `json:"clean_upload_finalize"`
-	MaliciousUploadFinalize       caseEvidence   `json:"malicious_upload_finalize"`
-	InvalidCredentialFailClosed   string         `json:"invalid_credential_fail_closed"`
-	ScannerUnavailableFailClosed  string         `json:"scanner_unavailable_fail_closed"`
-	DirectClamAVAccess            bool           `json:"direct_clamav_access"`
-	QuarantineExecution           string         `json:"quarantine_execution"`
-	ProductionServiceIdentity     string         `json:"production_service_identity"`
-	ProductionRuntimeAcceptance   string         `json:"production_runtime_acceptance"`
-	ObservedAt                    time.Time      `json:"observed_at"`
+	Component                      string       `json:"component"`
+	DriveRevision                  string       `json:"drive_revision"`
+	WardveilEndpoint               string       `json:"wardveil_endpoint"`
+	ApplicationConsumerIntegration string       `json:"application_consumer_integration"`
+	CleanUploadFinalize            caseEvidence `json:"clean_upload_finalize"`
+	MaliciousUploadFinalize        caseEvidence `json:"malicious_upload_finalize"`
+	InvalidCredentialFailClosed    string       `json:"invalid_credential_fail_closed"`
+	ScannerUnavailableFailClosed   string       `json:"scanner_unavailable_fail_closed"`
+	DirectClamAVAccess             bool         `json:"direct_clamav_access"`
+	QuarantineExecution            string       `json:"quarantine_execution"`
+	ProductionServiceIdentity      string       `json:"production_service_identity"`
+	ProductionRuntimeAcceptance    string       `json:"production_runtime_acceptance"`
+	ObservedAt                     time.Time    `json:"observed_at"`
 }
 
 type caseEvidence struct {
-	Completed                        bool                  `json:"completed"`
-	Disposition                      wardveil.Disposition `json:"disposition"`
-	CanRelease                       bool                  `json:"can_release"`
-	QuarantineRequired               bool                  `json:"quarantine_required"`
-	ObjectPublished                  bool                  `json:"object_published"`
-	StagingHeld                      bool                  `json:"staging_held"`
-	PublishedBytesMatch              bool                  `json:"published_bytes_match"`
-	QuarantineHandoffGenerated       bool                  `json:"quarantine_handoff_generated"`
+	Completed                         bool                 `json:"completed"`
+	Disposition                       wardveil.Disposition `json:"disposition"`
+	CanRelease                        bool                 `json:"can_release"`
+	QuarantineRequired                bool                 `json:"quarantine_required"`
+	ObjectPublished                   bool                 `json:"object_published"`
+	StagingHeld                       bool                 `json:"staging_held"`
+	PublishedBytesMatch               bool                 `json:"published_bytes_match"`
+	QuarantineHandoffGenerated        bool                 `json:"quarantine_handoff_generated"`
 	RequiresExplicitExecutorAuthority bool                 `json:"requires_explicit_executor_authority"`
-	DestructiveAction                bool                  `json:"destructive_action"`
-	ReasonCodes                      []string              `json:"reason_codes"`
+	DestructiveAction                 bool                 `json:"destructive_action"`
+	ReasonCodes                       []string             `json:"reason_codes"`
 }
 
 type recordingGate struct {
