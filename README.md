@@ -14,6 +14,7 @@ The current foundation establishes:
 - an ownership-first PostgreSQL schema designed for multi-user accounts and Spaces;
 - development storage separation for finalized objects, staging, Trash, and private quarantine state;
 - resumable-upload service primitives with a fail-closed Wardveil Scan publication gate;
+- opt-in Development runtime wiring that exposes the real resumable-upload routes through the signed, loopback-only Wardveil Scan client while keeping upload-session metadata in the existing in-memory Development repository;
 - exact `drive_file` resource and SHA-256 binding for Wardveil findings, with current authoritative clean evidence required before release;
 - a Drive-owned quarantine target that durably claims an operation before isolation, moves payloads out of the active namespace, supports exact idempotent replay, and fails closed on conflicting or ambiguous state;
 - an internal token-gated Drive quarantine HTTP boundary plus an internal-RPC-only Cloudflare target bridge with Workers.dev and preview URLs disabled;
@@ -41,6 +42,8 @@ make run
 Then open `http://127.0.0.1:8080`.
 
 The server intentionally binds to loopback by default. A non-loopback bind requires `GC_DRIVE_ALLOW_PUBLIC_BIND=true` and still does **not** authorize direct Internet exposure or production use. The internal Wardveil quarantine routes additionally remain unavailable unless `GC_DRIVE_WARDVEIL_SERVICE_TOKEN` is supplied through the runtime secret boundary.
+
+Resumable-upload runtime wiring is disabled by default. Development testing of the signed Wardveil publication gate requires `GC_DRIVE_UPLOADS_ENABLED=true` plus an owner-only credential file named by `GC_DRIVE_WARDVEIL_SCAN_SECRET_FILE`; the secret itself must not be placed in `.env` or command arguments. This Development path still uses in-memory upload-session metadata and is not production acceptance.
 
 ## Repository map
 
