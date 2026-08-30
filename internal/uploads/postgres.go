@@ -19,11 +19,12 @@ func (r PostgresRepository) Create(ctx context.Context, session Session) error {
 	}
 	_, err := r.DB.ExecContext(ctx, `
 INSERT INTO upload_sessions (
-    id, space_id, parent_node_id, account_id, target_name, expected_size_bytes,
+    id, space_id, node_id, parent_node_id, account_id, target_name, expected_size_bytes,
     received_size_bytes, staging_key, state, expires_at
-) VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, NULL, $6, $7, $8, $9)`,
+) VALUES ($1, $2, $3, NULLIF($4, '')::uuid, $5, $6, NULL, $7, $8, $9, $10)`,
 		session.ID,
 		session.SpaceID,
+		session.NodeID,
 		session.ParentNodeID,
 		session.AccountID,
 		session.TargetName,
@@ -46,11 +47,12 @@ func (r PostgresRepository) Get(ctx context.Context, uploadID string) (Session, 
 	var parentNodeID sql.NullString
 	var state string
 	err := r.DB.QueryRowContext(ctx, `
-SELECT id, space_id, parent_node_id::text, account_id, target_name, received_size_bytes, state, expires_at
+SELECT id, space_id, node_id, parent_node_id::text, account_id, target_name, received_size_bytes, state, expires_at
 FROM upload_sessions
 WHERE id = $1`, uploadID).Scan(
 		&session.ID,
 		&session.SpaceID,
+		&session.NodeID,
 		&parentNodeID,
 		&session.AccountID,
 		&session.TargetName,
@@ -79,13 +81,15 @@ func (r PostgresRepository) Update(ctx context.Context, session Session) error {
 UPDATE upload_sessions
 SET received_size_bytes = $2,
     state = $3,
-    parent_node_id = NULLIF($4, '')::uuid,
-    target_name = $5,
+    node_id = $4,
+    parent_node_id = NULLIF($5, '')::uuid,
+    target_name = $6,
     updated_at = now()
 WHERE id = $1`,
 		session.ID,
 		session.Offset,
 		stateToDatabase(session.State),
+		session.NodeID,
 		session.ParentNodeID,
 		session.TargetName,
 	)
