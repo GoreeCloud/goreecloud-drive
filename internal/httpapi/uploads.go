@@ -25,7 +25,9 @@ type UploadService interface {
 
 func NewWithUploads(cfg config.Config, logger *slog.Logger, deps Dependencies, uploadService UploadService) *Server {
 	server := NewWithDependencies(cfg, logger, deps)
-	if uploadService == nil { return server }
+	if uploadService == nil {
+		return server
+	}
 	access := spaceaccess.New(deps.Memberships)
 	nodeService := nodes.New(deps.Nodes, access)
 	uploadMux := http.NewServeMux()
@@ -39,53 +41,120 @@ func NewWithUploads(cfg config.Config, logger *slog.Logger, deps Dependencies, u
 }
 
 func createUploadHandler(principals authn.Resolver, access spaceaccess.Service, nodeService nodes.Service, service UploadService) http.HandlerFunc {
-	type request struct { NodeID string `json:"node_id"` }
+	type request struct {
+		NodeID string `json:"node_id"`
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		principal, ok := resolvePrincipal(w, r, principals); if !ok { return }
+		principal, ok := resolvePrincipal(w, r, principals)
+		if !ok {
+			return
+		}
 		spaceID := r.PathValue("spaceID")
-		if !access.Allows(r.Context(), principal.AccountID, spaceID, authz.ActionCreateFile) { writeJSON(w, http.StatusForbidden, map[string]string{"error":"access denied"}); return }
+		if !access.Allows(r.Context(), principal.AccountID, spaceID, authz.ActionCreateFile) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+			return
+		}
 		var body request
-		if err := decodeJSON(w, r, &body); err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid request body"}); return }
+		if err := decodeJSON(w, r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
 		node, err := nodeService.Get(r.Context(), principal.AccountID, spaceID, body.NodeID)
-		if err != nil { writeNodeError(w, err); return }
-		if node.Kind != nodes.KindFile { writeJSON(w, http.StatusBadRequest, map[string]string{"error":"uploads require a file node"}); return }
-		parentNodeID := ""; if node.ParentID != nil { parentNodeID = *node.ParentID }
+		if err != nil {
+			writeNodeError(w, err)
+			return
+		}
+		if node.Kind != nodes.KindFile {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "uploads require a file node"})
+			return
+		}
+		parentNodeID := ""
+		if node.ParentID != nil {
+			parentNodeID = *node.ParentID
+		}
 		session, err := service.Create(r.Context(), principal.AccountID, spaceID, node.ID, parentNodeID, node.Name)
-		if err != nil { writeUploadError(w, err); return }
+		if err != nil {
+			writeUploadError(w, err)
+			return
+		}
 		w.Header().Set("Upload-Offset", "0")
 		w.Header().Set("Location", "/api/v1/spaces/"+spaceID+"/uploads/"+session.ID)
 		writeJSON(w, http.StatusCreated, session)
 	}
 }
 
-func getUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc { return func(w http.ResponseWriter, r *http.Request) {
-	principal, ok := resolvePrincipal(w, r, principals); if !ok { return }
-	session, err := service.Get(r.Context(), principal.AccountID, r.PathValue("spaceID"), r.PathValue("uploadID")); if err != nil { writeUploadError(w, err); return }
-	w.Header().Set("Upload-Offset", strconv.FormatInt(session.Offset,10)); writeJSON(w,http.StatusOK,session)
-} }
+func getUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := resolvePrincipal(w, r, principals)
+		if !ok {
+			return
+		}
+		session, err := service.Get(r.Context(), principal.AccountID, r.PathValue("spaceID"), r.PathValue("uploadID"))
+		if err != nil {
+			writeUploadError(w, err)
+			return
+		}
+		w.Header().Set("Upload-Offset", strconv.FormatInt(session.Offset, 10))
+		writeJSON(w, http.StatusOK, session)
+	}
+}
 
-func appendUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc { return func(w http.ResponseWriter, r *http.Request) {
-	principal, ok := resolvePrincipal(w,r,principals); if !ok { return }
-	offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"),10,64); if err != nil || offset < 0 { writeJSON(w,http.StatusBadRequest,map[string]string{"error":"valid Upload-Offset header required"}); return }
-	session, err := service.Append(r.Context(),principal.AccountID,r.PathValue("spaceID"),r.PathValue("uploadID"),offset,r.Body)
-	if err != nil { if errors.Is(err,uploads.ErrOffsetMismatch) { w.Header().Set("Upload-Offset",strconv.FormatInt(session.Offset,10)) }; writeUploadError(w,err); return }
-	w.Header().Set("Upload-Offset",strconv.FormatInt(session.Offset,10)); w.WriteHeader(http.StatusNoContent)
-} }
+func appendUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := resolvePrincipal(w, r, principals)
+		if !ok {
+			return
+		}
+		offset, err := strconv.ParseInt(r.Header.Get("Upload-Offset"), 10, 64)
+		if err != nil || offset < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "valid Upload-Offset header required"})
+			return
+		}
+		session, err := service.Append(r.Context(), principal.AccountID, r.PathValue("spaceID"), r.PathValue("uploadID"), offset, r.Body)
+		if err != nil {
+			if errors.Is(err, uploads.ErrOffsetMismatch) {
+				w.Header().Set("Upload-Offset", strconv.FormatInt(session.Offset, 10))
+			}
+			writeUploadError(w, err)
+			return
+		}
+		w.Header().Set("Upload-Offset", strconv.FormatInt(session.Offset, 10))
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
 
-func completeUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc { return func(w http.ResponseWriter, r *http.Request) {
-	principal, ok := resolvePrincipal(w,r,principals); if !ok { return }
-	session, err := service.Complete(r.Context(),principal.AccountID,r.PathValue("spaceID"),r.PathValue("uploadID")); if err != nil { writeUploadError(w,err); return }; writeJSON(w,http.StatusOK,session)
-} }
+func completeUploadHandler(principals authn.Resolver, service UploadService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := resolvePrincipal(w, r, principals)
+		if !ok {
+			return
+		}
+		session, err := service.Complete(r.Context(), principal.AccountID, r.PathValue("spaceID"), r.PathValue("uploadID"))
+		if err != nil {
+			writeUploadError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, session)
+	}
+}
 
 func writeUploadError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err,uploads.ErrNotFound): writeJSON(w,http.StatusNotFound,map[string]string{"error":"upload session not found"})
-	case errors.Is(err,uploads.ErrForbidden): writeJSON(w,http.StatusForbidden,map[string]string{"error":"access denied"})
-	case errors.Is(err,uploads.ErrOffsetMismatch): writeJSON(w,http.StatusConflict,map[string]string{"error":"upload offset mismatch"})
-	case errors.Is(err,uploads.ErrCompleted): writeJSON(w,http.StatusConflict,map[string]string{"error":"upload session already completed"})
-	case errors.Is(err,uploads.ErrInvalidTarget): writeJSON(w,http.StatusBadRequest,map[string]string{"error":"invalid upload target"})
-	case errors.Is(err,uploads.ErrSecurityBlocked): writeJSON(w,http.StatusUnprocessableEntity,map[string]string{"error":"upload blocked by security policy"})
-	case errors.Is(err,uploads.ErrSecurityUnavailable): writeJSON(w,http.StatusServiceUnavailable,map[string]string{"error":"upload security verification unavailable"})
-	default: writeJSON(w,http.StatusInternalServerError,map[string]string{"error":"upload operation failed"})
+	case errors.Is(err, uploads.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "upload session not found"})
+	case errors.Is(err, uploads.ErrForbidden):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+	case errors.Is(err, uploads.ErrOffsetMismatch):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload offset mismatch"})
+	case errors.Is(err, uploads.ErrCompleted):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload session already completed"})
+	case errors.Is(err, uploads.ErrInvalidTarget):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload target"})
+	case errors.Is(err, uploads.ErrSecurityBlocked):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "upload blocked by security policy"})
+	case errors.Is(err, uploads.ErrSecurityUnavailable):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "upload security verification unavailable"})
+	default:
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "upload operation failed"})
 	}
 }
