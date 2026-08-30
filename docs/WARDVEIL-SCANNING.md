@@ -18,7 +18,7 @@ Scanner errors, stale or malformed evidence, scope mismatch, digest mismatch, `u
 
 ## Development runtime wiring
 
-The development server can now opt into the real resumable-upload HTTP routes with the existing `StagedFileGate` and hardened signed Wardveil Scan client. This runtime path is disabled by default.
+The development server can opt into the real resumable-upload HTTP routes with the existing `StagedFileGate` and hardened signed Wardveil Scan client. This runtime path is disabled by default.
 
 When `GC_DRIVE_UPLOADS_ENABLED=true`:
 
@@ -28,7 +28,35 @@ When `GC_DRIVE_UPLOADS_ENABLED=true`:
 - upload completion cannot publish content when the Scan credential, transport, evidence, or scanner path fails;
 - the runtime uses the existing local staging/object backend and the development in-memory upload-session repository.
 
-This is executable application-consumer wiring, not a production deployment claim. The newer PostgreSQL upload-session repository is source-validated separately and is not yet selected by `cmd/server`; a restart therefore does not preserve the development runtime's in-memory session metadata.
+This is executable application-consumer wiring, not a production deployment claim. The PostgreSQL upload-session repository is source-validated separately and is not yet selected by `cmd/server`; a restart therefore does not preserve the development runtime's in-memory session metadata.
+
+## Live application-consumer acceptance checkpoint
+
+A controlled target-environment acceptance run on `goreecloud-vps-01` completed successfully for exact Drive revision `00b35aabbf529ba5605430993b571a23996e324e` against the deployed Wardveil Scan service at revision `52a1de08e3fe771acab6c308e7af36914242de07`.
+
+That exact run proved:
+
+- clean upload finalization published only the inspected bytes and the published bytes matched staging;
+- EICAR was classified as malicious, blocked from publication, and retained in staging;
+- the malicious decision generated a non-destructive Quarantine handoff that still requires explicit executor authority;
+- an invalid Drive Scan credential failed closed;
+- an unavailable Scan endpoint failed closed;
+- the Drive consumer did not access ClamAV directly.
+
+The live evidence remains exact-revision-bound to `00b35aabbf529ba5605430993b571a23996e324e`. Later descendants do not inherit target-environment acceptance automatically.
+
+## Runtime negative acceptance command
+
+`cmd/wardveil-negative-acceptance` expands the target-environment failure matrix while keeping the already-passed clean/EICAR runner separate.
+
+The command distinguishes two evidence classes:
+
+- **Live Wardveil transport cases:** an exact replay uses a fixed signed nonce/timestamp/correlation request and must return the cached equivalent envelope; a conflicting request reusing that nonce must be rejected with HTTP 409 by the deployed Wardveil Scan service.
+- **Controlled Drive enforcement cases:** a private loopback timeout and controlled authoritative-envelope injection exercise Drive's real upload service, staging boundary, `StagedFileGate`, publication decision, and fail-closed behavior for timeout, expired evidence, digest mismatch, changed-during-scan content, suspicious results, unknown results, and unsupported results.
+
+Controlled envelope injection is application-consumer evidence only. It does not claim the controlled producer is a deployed Wardveil service or that the deployed scanner naturally emitted those states. The command records replay durability, revoked-credential testing, stale-signature testing, and capacity exhaustion as unproven until exact target-environment evidence exists.
+
+The command requires the exact source revision under test and the existing owner-only Scan secret file. Sanitized JSON output excludes the caller secret and raw test payloads.
 
 ## Result semantics
 
@@ -56,20 +84,19 @@ Everkeep remains authoritative for backup, restore, preservation, and recovery v
 
 ## Production acceptance
 
-This repository currently proves source behavior, CI-tested security invariants, and an opt-in Development runtime construction path only. `production_runtime_status` remains `unaccepted`.
+Drive's upload-finalization application-consumer path is now runtime validated for the exact live checkpoint above, but `production_runtime_status` remains `unaccepted`.
 
 Production acceptance still requires, at minimum:
 
-- deployment of the authenticated Drive-to-Wardveil transport and Drive runtime wiring in the target environment;
-- deployed healthy scanner runtime and current signature-health evidence behind Wardveil;
-- target-environment clean, EICAR/malicious, suspicious, unsupported, timeout, unavailable, digest-mismatch, stale-evidence, replay, and concurrent-finalization tests;
+- exact-revision execution of the expanded negative matrix in the target environment;
+- stale-signature, revoked-credential, and capacity/concurrency evidence against the applicable deployed runtime;
 - durable production upload-session persistence and single-writer or equivalent synchronization so staged bytes cannot change between final verification and publication;
-- production GoreeCloud Identity/service-key lifecycle, rotation, revocation, and deployment-appropriate replay protection;
+- production GoreeCloud Identity/service-key lifecycle, rotation, revocation, and deployment-appropriate durable replay protection;
 - download/open/share enforcement when those runtime capabilities are implemented;
-- authorized Wardveil Quarantine execution and recovery evidence;
+- authorized Wardveil Quarantine execution with target-state readback and reconciliation evidence;
 - Wardveil Audit/Security Center provenance acceptance;
 - Everkeep restore-path acceptance before restored content is released;
 - Privacy Shield runtime data-minimization validation;
 - Glaze UI states for scanning, held, blocked, unavailable, and quarantine/recovery outcomes.
 
-Green source CI or successful Development runtime construction is not evidence that a deployed Drive instance is protected from malware.
+Green source CI, a successful controlled consumer case, or a prior exact-revision live run must not be generalized into a broader production or `Protected by Wardveil` claim.
