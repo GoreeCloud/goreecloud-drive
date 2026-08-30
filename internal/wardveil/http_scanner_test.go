@@ -23,6 +23,16 @@ const testKeyID = "scan-current"
 
 var testCallerSecret = strings.Repeat("s", 64)
 
+type closeTrackingReader struct {
+	*bytes.Reader
+	closed bool
+}
+
+func (r *closeTrackingReader) Close() error {
+	r.closed = true
+	return nil
+}
+
 func scanRequestFor(body []byte) ScanRequest {
 	sum := sha256.Sum256(body)
 	return ScanRequest{
@@ -150,6 +160,29 @@ func TestHTTPScannerSendsSignedBoundRequestAndMapsConsumerResult(t *testing.T) {
 	}
 	if len(envelope.ScanRecord.EvidenceRefs) != 2 {
 		t.Fatalf("evidence=%v", envelope.ScanRecord.EvidenceRefs)
+	}
+}
+
+func TestHTTPScannerDoesNotCloseCallerOwnedBody(t *testing.T) {
+	body := []byte("Drive staged upload body ownership")
+	request := scanRequestFor(body)
+	reader := &closeTrackingReader{Reader: bytes.NewReader(body)}
+	scanner := newTestScanner(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, canonicalScanResponse(request, "drive-scan-fixed", ResultClean))
+	}, defaultMaxScanResponseBytes)
+
+	if _, err := scanner.Scan(context.Background(), request, reader); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if reader.closed {
+		t.Fatal("HTTPScanner closed caller-owned request body")
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("caller close: %v", err)
+	}
+	if !reader.closed {
+		t.Fatal("caller-owned body should close when caller closes it")
 	}
 }
 

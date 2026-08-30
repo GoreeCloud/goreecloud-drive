@@ -203,7 +203,10 @@ func (s *HTTPScanner) Scan(ctx context.Context, request ScanRequest, body io.Rea
 		digest,
 	)
 
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint.String(), body)
+	// Preserve ownership of the caller-supplied stream. net/http always closes
+	// Request.Body after transmission, so wrap the reader in a no-op closer and
+	// leave the underlying staging reader for StagedFileGate to close exactly once.
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint.String(), io.NopCloser(body))
 	if err != nil {
 		return ScanEnvelope{}, fmt.Errorf("create Wardveil Scan request: %w", err)
 	}
