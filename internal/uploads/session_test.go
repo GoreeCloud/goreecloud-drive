@@ -52,15 +52,49 @@ func allowGate() SecurityGate {
 	return fakeSecurityGate{decision: wardveil.Decision{Disposition: wardveil.DispositionAllow, CanRelease: true}}
 }
 
+func createSession(t *testing.T, service Service) Session {
+	t.Helper()
+	session, err := service.Create(context.Background(), "acct", "space", "node", "parent", "report.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+func TestServiceCreatePreservesDestinationIntent(t *testing.T) {
+	repo := NewMemoryRepository()
+	service := New(repo, &fakeStore{}, allowGate(), 8, time.Hour)
+	session := createSession(t, service)
+	if session.ParentNodeID != "parent" || session.TargetName != "report.pdf" || session.NodeID != "node" {
+		t.Fatalf("unexpected target model: %+v", session)
+	}
+	stored, err := repo.Get(context.Background(), session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ParentNodeID != "parent" || stored.TargetName != "report.pdf" || stored.NodeID != "node" {
+		t.Fatalf("stored target model: %+v", stored)
+	}
+}
+
+func TestServiceCreateRejectsUnsafeTargets(t *testing.T) {
+	service := New(NewMemoryRepository(), &fakeStore{}, allowGate(), 8, time.Hour)
+	for _, name := range []string{"", ".", "..", "folder/file", `folder\file`} {
+		if _, err := service.Create(context.Background(), "acct", "space", "node", "", name); !errors.Is(err, ErrInvalidTarget) {
+			t.Fatalf("name=%q err=%v", name, err)
+		}
+	}
+	if _, err := service.Create(context.Background(), "acct", "space", "", "", "report.pdf"); !errors.Is(err, ErrInvalidTarget) {
+		t.Fatalf("missing node err=%v", err)
+	}
+}
+
 func TestServiceAppendAndCompleteAfterWardveilAllowsRelease(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	service := New(repo, store, allowGate(), 8, time.Hour)
 	ctx := context.Background()
-	session, err := service.Create(ctx, "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createSession(t, service)
 	updated, err := service.Append(ctx, "acct", "space", session.ID, 0, bytes.NewBufferString("hello"))
 	if err != nil {
 		t.Fatal(err)
@@ -81,10 +115,7 @@ func TestServiceCompleteFailsClosedWithoutSecurityGate(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	service := New(repo, store, nil, 8, time.Hour)
-	session, err := service.Create(context.Background(), "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createSession(t, service)
 	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityUnavailable) {
 		t.Fatalf("err=%v", err)
 	}
@@ -102,10 +133,7 @@ func TestServiceCompleteBlocksWardveilDeniedRelease(t *testing.T) {
 		ReasonCodes:        []string{"wardveil_malicious_digest_match"},
 	}}
 	service := New(repo, store, gate, 8, time.Hour)
-	session, err := service.Create(context.Background(), "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createSession(t, service)
 	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityBlocked) {
 		t.Fatalf("err=%v", err)
 	}
@@ -118,10 +146,7 @@ func TestServiceCompleteFailsClosedWhenScannerUnavailable(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	service := New(repo, store, fakeSecurityGate{err: errors.New("Wardveil unavailable")}, 8, time.Hour)
-	session, err := service.Create(context.Background(), "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createSession(t, service)
 	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityUnavailable) {
 		t.Fatalf("err=%v", err)
 	}
@@ -134,10 +159,7 @@ func TestServiceRejectsWrongOffsetAndOwner(t *testing.T) {
 	repo := NewMemoryRepository()
 	service := New(repo, &fakeStore{}, allowGate(), 8, time.Hour)
 	ctx := context.Background()
-	session, err := service.Create(ctx, "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createSession(t, service)
 	if _, err := service.Append(ctx, "acct", "space", session.ID, 1, bytes.NewBufferString("x")); err != ErrOffsetMismatch {
 		t.Fatalf("err=%v", err)
 	}

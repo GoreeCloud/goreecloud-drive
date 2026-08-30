@@ -16,17 +16,13 @@ import (
 	"github.com/GoreeCloud/goreecloud-drive/internal/uploads"
 )
 
-// UploadService is the HTTP-facing resumable-transfer boundary.
 type UploadService interface {
-	Create(ctx context.Context, accountID, spaceID, nodeID string) (uploads.Session, error)
+	Create(ctx context.Context, accountID, spaceID, nodeID, parentNodeID, targetName string) (uploads.Session, error)
 	Get(ctx context.Context, accountID, spaceID, uploadID string) (uploads.Session, error)
 	Append(ctx context.Context, accountID, spaceID, uploadID string, expectedOffset int64, body io.Reader) (uploads.Session, error)
 	Complete(ctx context.Context, accountID, spaceID, uploadID string) (uploads.Session, error)
 }
 
-// NewWithUploads extends the core Drive API with resumable upload routes while
-// retaining the same fail-closed authentication, authorization, node, and
-// Wardveil file-security checks.
 func NewWithUploads(cfg config.Config, logger *slog.Logger, deps Dependencies, uploadService UploadService) *Server {
 	server := NewWithDependencies(cfg, logger, deps)
 	if uploadService == nil {
@@ -72,7 +68,11 @@ func createUploadHandler(principals authn.Resolver, access spaceaccess.Service, 
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "uploads require a file node"})
 			return
 		}
-		session, err := service.Create(r.Context(), principal.AccountID, spaceID, node.ID)
+		parentNodeID := ""
+		if node.ParentID != nil {
+			parentNodeID = *node.ParentID
+		}
+		session, err := service.Create(r.Context(), principal.AccountID, spaceID, node.ID, parentNodeID, node.Name)
 		if err != nil {
 			writeUploadError(w, err)
 			return
@@ -148,6 +148,8 @@ func writeUploadError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload offset mismatch"})
 	case errors.Is(err, uploads.ErrCompleted):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload session already completed"})
+	case errors.Is(err, uploads.ErrInvalidTarget):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid upload target"})
 	case errors.Is(err, uploads.ErrSecurityBlocked):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "upload blocked by security policy"})
 	case errors.Is(err, uploads.ErrSecurityUnavailable):
