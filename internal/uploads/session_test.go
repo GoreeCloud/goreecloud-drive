@@ -52,15 +52,53 @@ func allowGate() SecurityGate {
 	return fakeSecurityGate{decision: wardveil.Decision{Disposition: wardveil.DispositionAllow, CanRelease: true}}
 }
 
+func createAssignedSession(t *testing.T, service Service, repo Repository) Session {
+	t.Helper()
+	session, err := service.Create(context.Background(), "acct", "space", "", "report.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.NodeID = "node"
+	if err := repo.Update(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+func TestServiceCreatePreservesDestinationIntent(t *testing.T) {
+	repo := NewMemoryRepository()
+	service := New(repo, &fakeStore{}, allowGate(), 8, time.Hour)
+	session, err := service.Create(context.Background(), "acct", "space", "parent", "report.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.ParentNodeID != "parent" || session.TargetName != "report.pdf" || session.NodeID != "" {
+		t.Fatalf("unexpected target model: %+v", session)
+	}
+	stored, err := repo.Get(context.Background(), session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ParentNodeID != "parent" || stored.TargetName != "report.pdf" {
+		t.Fatalf("stored target model: %+v", stored)
+	}
+}
+
+func TestServiceCreateRejectsUnsafeTargetNames(t *testing.T) {
+	service := New(NewMemoryRepository(), &fakeStore{}, allowGate(), 8, time.Hour)
+	for _, name := range []string{"", ".", "..", "folder/file", `folder\file`} {
+		if _, err := service.Create(context.Background(), "acct", "space", "", name); !errors.Is(err, ErrInvalidTarget) {
+			t.Fatalf("name=%q err=%v", name, err)
+		}
+	}
+}
+
 func TestServiceAppendAndCompleteAfterWardveilAllowsRelease(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	service := New(repo, store, allowGate(), 8, time.Hour)
 	ctx := context.Background()
-	session, err := service.Create(ctx, "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createAssignedSession(t, service, repo)
 	updated, err := service.Append(ctx, "acct", "space", session.ID, 0, bytes.NewBufferString("hello"))
 	if err != nil {
 		t.Fatal(err)
@@ -77,14 +115,27 @@ func TestServiceAppendAndCompleteAfterWardveilAllowsRelease(t *testing.T) {
 	}
 }
 
+func TestServiceCompleteRequiresAssignedFinalNode(t *testing.T) {
+	repo := NewMemoryRepository()
+	store := &fakeStore{}
+	service := New(repo, store, allowGate(), 8, time.Hour)
+	session, err := service.Create(context.Background(), "acct", "space", "", "report.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrInvalidTarget) {
+		t.Fatalf("err=%v", err)
+	}
+	if store.finalized {
+		t.Fatal("unassigned upload must not be finalized")
+	}
+}
+
 func TestServiceCompleteFailsClosedWithoutSecurityGate(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	service := New(repo, store, nil, 8, time.Hour)
-	session, err := service.Create(context.Background(), "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createAssignedSession(t, service, repo)
 	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityUnavailable) {
 		t.Fatalf("err=%v", err)
 	}
@@ -96,16 +147,9 @@ func TestServiceCompleteFailsClosedWithoutSecurityGate(t *testing.T) {
 func TestServiceCompleteBlocksWardveilDeniedRelease(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
-	gate := fakeSecurityGate{decision: wardveil.Decision{
-		Disposition:        wardveil.DispositionBlockQuarantine,
-		QuarantineRequired: true,
-		ReasonCodes:        []string{"wardveil_malicious_digest_match"},
-	}}
+	gate := fakeSecurityGate{decision: wardveil.Decision{Disposition: wardveil.DispositionBlockQuarantine, QuarantineRequired: true, ReasonCodes: []string{"wardveil_malicious_digest_match"}}}
 	service := New(repo, store, gate, 8, time.Hour)
-	session, err := service.Create(context.Background(), "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createAssignedSession(t, service, repo)
 	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityBlocked) {
 		t.Fatalf("err=%v", err)
 	}
@@ -118,10 +162,7 @@ func TestServiceCompleteFailsClosedWhenScannerUnavailable(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	service := New(repo, store, fakeSecurityGate{err: errors.New("Wardveil unavailable")}, 8, time.Hour)
-	session, err := service.Create(context.Background(), "acct", "space", "node")
-	if err != nil {
-		t.Fatal(err)
-	}
+	session := createAssignedSession(t, service, repo)
 	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrSecurityUnavailable) {
 		t.Fatalf("err=%v", err)
 	}
@@ -134,7 +175,7 @@ func TestServiceRejectsWrongOffsetAndOwner(t *testing.T) {
 	repo := NewMemoryRepository()
 	service := New(repo, &fakeStore{}, allowGate(), 8, time.Hour)
 	ctx := context.Background()
-	session, err := service.Create(ctx, "acct", "space", "node")
+	session, err := service.Create(ctx, "acct", "space", "", "report.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
