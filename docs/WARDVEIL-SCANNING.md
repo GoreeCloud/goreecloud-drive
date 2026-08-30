@@ -16,6 +16,20 @@ The current source milestone protects the resumable-upload publication boundary:
 
 Scanner errors, stale or malformed evidence, scope mismatch, digest mismatch, `unknown`, and `unsupported` results do not publish the file.
 
+## Development runtime wiring
+
+The development server can now opt into the real resumable-upload HTTP routes with the existing `StagedFileGate` and hardened signed Wardveil Scan client. This runtime path is disabled by default.
+
+When `GC_DRIVE_UPLOADS_ENABLED=true`:
+
+- the Scan endpoint is restricted by the client to explicit IPv4 loopback HTTP and the canonical `/v1/scan` path;
+- Drive signs each Scan request with the configured caller/key identity and an owner-only credential file named by `GC_DRIVE_WARDVEIL_SCAN_SECRET_FILE`;
+- the credential value is never required in `.env`, command arguments, shared evidence, or application logs;
+- upload completion cannot publish content when the Scan credential, transport, evidence, or scanner path fails;
+- the runtime uses the existing local staging/object backend and the development in-memory upload-session repository.
+
+This is executable application-consumer wiring, not a production deployment claim. The newer PostgreSQL upload-session repository is source-validated separately and is not yet selected by `cmd/server`; a restart therefore does not preserve the development runtime's in-memory session metadata.
+
 ## Result semantics
 
 | Wardveil result | Drive behavior |
@@ -42,18 +56,20 @@ Everkeep remains authoritative for backup, restore, preservation, and recovery v
 
 ## Production acceptance
 
-This repository currently proves source behavior and CI-tested security invariants only. `production_runtime_status` remains `unaccepted`.
+This repository currently proves source behavior, CI-tested security invariants, and an opt-in Development runtime construction path only. `production_runtime_status` remains `unaccepted`.
 
 Production acceptance still requires, at minimum:
 
-- deployed authenticated Drive-to-Wardveil transport;
+- deployment of the authenticated Drive-to-Wardveil transport and Drive runtime wiring in the target environment;
 - deployed healthy scanner runtime and current signature-health evidence behind Wardveil;
-- target-environment clean, EICAR/malicious, suspicious, unsupported, timeout, unavailable, digest-mismatch, stale-evidence, and concurrent-finalization tests;
-- durable single-writer or equivalent synchronization so staged bytes cannot change between final verification and publication;
+- target-environment clean, EICAR/malicious, suspicious, unsupported, timeout, unavailable, digest-mismatch, stale-evidence, replay, and concurrent-finalization tests;
+- durable production upload-session persistence and single-writer or equivalent synchronization so staged bytes cannot change between final verification and publication;
+- production GoreeCloud Identity/service-key lifecycle, rotation, revocation, and deployment-appropriate replay protection;
 - download/open/share enforcement when those runtime capabilities are implemented;
 - authorized Wardveil Quarantine execution and recovery evidence;
+- Wardveil Audit/Security Center provenance acceptance;
 - Everkeep restore-path acceptance before restored content is released;
-- Privacy Shield data-minimization validation;
+- Privacy Shield runtime data-minimization validation;
 - Glaze UI states for scanning, held, blocked, unavailable, and quarantine/recovery outcomes.
 
-Green source CI is not evidence that a deployed Drive instance is protected from malware.
+Green source CI or successful Development runtime construction is not evidence that a deployed Drive instance is protected from malware.
