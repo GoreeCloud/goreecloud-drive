@@ -9,46 +9,48 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/GoreeCloud/goreecloud-drive/internal/wardveil"
 )
 
 const maxWardveilRestartEvidenceBytes = 64 << 10
 
 type wardveilRestartEvidence struct {
-	Component                         string `json:"component"`
-	WardveilRevision                  string `json:"wardveil_revision"`
-	WardveilEndpoint                  string `json:"wardveil_endpoint"`
-	Service                           string `json:"service"`
-	CallerID                          string `json:"caller_id"`
-	KeyID                             string `json:"key_id"`
-	ResourceType                      string `json:"resource_type"`
-	InitialAuthenticatedCleanRequest  string `json:"initial_authenticated_clean_request"`
-	ServiceRestart                    string `json:"service_restart"`
-	SystemdInvocationChanged          bool   `json:"systemd_invocation_changed"`
-	ExactReplayAfterRestart           string `json:"exact_replay_after_restart"`
-	CachedEnvelopeIdentical           bool   `json:"cached_envelope_identical"`
-	ConflictingReplayAfterRestart     string `json:"conflicting_replay_after_restart"`
-	PostAcceptanceHealth              string `json:"post_acceptance_health"`
-	ReplayDatabase                    string `json:"replay_database"`
-	ReplayDatabaseMode                string `json:"replay_database_mode"`
-	ReplayStateDirectoryMode          string `json:"replay_state_directory_mode"`
-	TransientRequestStatePrivate      bool   `json:"transient_request_state_private"`
-	TransientRequestStateRemoved      bool   `json:"transient_request_state_removed"`
-	RawResourceContentInEvidence      bool   `json:"raw_resource_content_in_evidence"`
-	CallerSecretInEvidence            bool   `json:"caller_secret_in_evidence"`
-	SingleHostRestartDurability       string `json:"single_host_restart_durability"`
-	MultiHostReplayDurability         string `json:"multi_host_replay_durability"`
-	ProductionServiceIdentity         string `json:"production_service_identity"`
-	ProductionRuntimeAcceptance       string `json:"production_runtime_acceptance"`
-	ProtectionClaimAuthority          bool   `json:"protection_claim_authority"`
-	ObservedAt                        string `json:"observed_at"`
+	Component                        string `json:"component"`
+	WardveilRevision                 string `json:"wardveil_revision"`
+	WardveilEndpoint                 string `json:"wardveil_endpoint"`
+	Service                          string `json:"service"`
+	CallerID                         string `json:"caller_id"`
+	KeyID                            string `json:"key_id"`
+	ResourceType                     string `json:"resource_type"`
+	InitialAuthenticatedCleanRequest string `json:"initial_authenticated_clean_request"`
+	ServiceRestart                   string `json:"service_restart"`
+	SystemdInvocationChanged         bool   `json:"systemd_invocation_changed"`
+	ExactReplayAfterRestart          string `json:"exact_replay_after_restart"`
+	CachedEnvelopeIdentical          bool   `json:"cached_envelope_identical"`
+	ConflictingReplayAfterRestart    string `json:"conflicting_replay_after_restart"`
+	PostAcceptanceHealth             string `json:"post_acceptance_health"`
+	ReplayDatabase                   string `json:"replay_database"`
+	ReplayDatabaseMode               string `json:"replay_database_mode"`
+	ReplayStateDirectoryMode         string `json:"replay_state_directory_mode"`
+	TransientRequestStatePrivate     bool   `json:"transient_request_state_private"`
+	TransientRequestStateRemoved     bool   `json:"transient_request_state_removed"`
+	RawResourceContentInEvidence     bool   `json:"raw_resource_content_in_evidence"`
+	CallerSecretInEvidence           bool   `json:"caller_secret_in_evidence"`
+	SingleHostRestartDurability      string `json:"single_host_restart_durability"`
+	MultiHostReplayDurability        string `json:"multi_host_replay_durability"`
+	ProductionServiceIdentity        string `json:"production_service_identity"`
+	ProductionRuntimeAcceptance      string `json:"production_runtime_acceptance"`
+	ProtectionClaimAuthority         bool   `json:"protection_claim_authority"`
+	ObservedAt                       string `json:"observed_at"`
 }
 
 type replayEvidenceBinding struct {
-	WardveilRevision       string
-	EvidenceSHA256         string
-	ObservedAt             time.Time
-	ReplayDurability       string
-	MultiHostReplayStatus  string
+	WardveilRevision      string
+	EvidenceSHA256        string
+	ObservedAt            time.Time
+	ReplayDurability      string
+	MultiHostReplayStatus string
 }
 
 func validateWardveilRestartEvidence(path, expectedRevision, expectedEndpoint, callerID, keyID string, now time.Time) (replayEvidenceBinding, error) {
