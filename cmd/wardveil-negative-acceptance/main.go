@@ -26,27 +26,32 @@ import (
 )
 
 type evidence struct {
-	Component                   string       `json:"component"`
-	DriveRevision               string       `json:"drive_revision"`
-	WardveilEndpoint            string       `json:"wardveil_endpoint"`
-	RuntimeNegativeMatrix       string       `json:"runtime_negative_matrix"`
-	LiveWardveilCases           []string     `json:"live_wardveil_cases"`
-	ControlledDriveCases        []string     `json:"controlled_drive_cases"`
-	ScannerTimeoutFailClosed    string       `json:"scanner_timeout_fail_closed"`
-	ExpiredEvidenceFailClosed   decisionCase `json:"expired_evidence_fail_closed"`
-	DigestMismatchFailClosed    decisionCase `json:"digest_mismatch_fail_closed"`
-	ChangedDuringScanFailClosed decisionCase `json:"changed_during_scan_fail_closed"`
-	SuspiciousContentHeld       decisionCase `json:"suspicious_content_held"`
-	UnknownResultFailClosed     decisionCase `json:"unknown_result_fail_closed"`
-	UnsupportedResultFailClosed decisionCase `json:"unsupported_result_fail_closed"`
-	ExactReplayCached           string       `json:"exact_replay_cached"`
-	ConflictingReplayRejected   string       `json:"conflicting_replay_rejected"`
-	ReplayDurability            string       `json:"replay_durability"`
-	RevokedCredential           string       `json:"revoked_credential"`
-	StaleSignatures             string       `json:"stale_signatures"`
-	CapacityExhaustion          string       `json:"capacity_exhaustion"`
-	ProductionRuntimeAcceptance string       `json:"production_runtime_acceptance"`
-	ObservedAt                  time.Time    `json:"observed_at"`
+	Component                     string       `json:"component"`
+	DriveRevision                 string       `json:"drive_revision"`
+	WardveilEndpoint              string       `json:"wardveil_endpoint"`
+	WardveilRevision              string       `json:"wardveil_revision"`
+	WardveilRestartEvidenceSHA256 string       `json:"wardveil_restart_evidence_sha256"`
+	WardveilRestartEvidenceAt     time.Time    `json:"wardveil_restart_evidence_observed_at"`
+	RuntimeNegativeMatrix         string       `json:"runtime_negative_matrix"`
+	LiveWardveilCases             []string     `json:"live_wardveil_cases"`
+	ValidatedWardveilRuntimeCases []string     `json:"validated_wardveil_runtime_evidence"`
+	ControlledDriveCases          []string     `json:"controlled_drive_cases"`
+	ScannerTimeoutFailClosed      string       `json:"scanner_timeout_fail_closed"`
+	ExpiredEvidenceFailClosed     decisionCase `json:"expired_evidence_fail_closed"`
+	DigestMismatchFailClosed      decisionCase `json:"digest_mismatch_fail_closed"`
+	ChangedDuringScanFailClosed   decisionCase `json:"changed_during_scan_fail_closed"`
+	SuspiciousContentHeld         decisionCase `json:"suspicious_content_held"`
+	UnknownResultFailClosed       decisionCase `json:"unknown_result_fail_closed"`
+	UnsupportedResultFailClosed   decisionCase `json:"unsupported_result_fail_closed"`
+	ExactReplayCached             string       `json:"exact_replay_cached"`
+	ConflictingReplayRejected     string       `json:"conflicting_replay_rejected"`
+	ReplayDurability              string       `json:"replay_durability"`
+	MultiHostReplayDurability     string       `json:"multi_host_replay_durability"`
+	RevokedCredential             string       `json:"revoked_credential"`
+	StaleSignatures               string       `json:"stale_signatures"`
+	CapacityExhaustion            string       `json:"capacity_exhaustion"`
+	ProductionRuntimeAcceptance   string       `json:"production_runtime_acceptance"`
+	ObservedAt                    time.Time    `json:"observed_at"`
 }
 
 type decisionCase struct {
@@ -83,21 +88,38 @@ func main() {
 	var callerID string
 	var keyID string
 	var revision string
+	var wardveilRevision string
+	var wardveilRestartEvidence string
 	var output string
 	flag.StringVar(&endpoint, "endpoint", "http://127.0.0.1:8791/v1/scan", "deployed Wardveil Scan endpoint")
 	flag.StringVar(&secretFile, "secret-file", "", "owner-only file containing the Drive Wardveil Scan caller secret")
 	flag.StringVar(&callerID, "caller-id", "goreecloud-drive", "Wardveil Scan caller ID")
 	flag.StringVar(&keyID, "key-id", "scan-current", "Wardveil Scan key ID")
 	flag.StringVar(&revision, "source-revision", "", "exact GoreeCloud Drive source revision under acceptance")
+	flag.StringVar(&wardveilRevision, "wardveil-revision", "", "exact deployed Wardveil Scan source revision")
+	flag.StringVar(&wardveilRestartEvidence, "wardveil-restart-evidence", "", "private sanitized Wardveil Scan restart acceptance evidence file")
 	flag.StringVar(&output, "output", "", "optional sanitized evidence output path")
 	flag.Parse()
 
-	if secretFile == "" || revision == "" {
-		fatalf("--secret-file and --source-revision are required")
+	if secretFile == "" || revision == "" || wardveilRevision == "" || wardveilRestartEvidence == "" {
+		fatalf("--secret-file, --source-revision, --wardveil-revision, and --wardveil-restart-evidence are required")
 	}
 	secret, err := readSecretFile(secretFile)
 	if err != nil {
 		fatalf("read Wardveil Scan secret: %v", err)
+	}
+
+	now := time.Now().UTC()
+	replayBinding, err := validateWardveilRestartEvidence(
+		wardveilRestartEvidence,
+		wardveilRevision,
+		endpoint,
+		callerID,
+		keyID,
+		now,
+	)
+	if err != nil {
+		fatalf("validate Wardveil restart evidence: %v", err)
 	}
 
 	root, err := os.MkdirTemp("", "goreecloud-drive-wardveil-negative-acceptance-")
@@ -115,7 +137,6 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	now := time.Now().UTC()
 
 	timeoutStatus, err := runTimeoutCase(ctx, store, callerID, keyID, secret)
 	if err != nil {
@@ -163,27 +184,32 @@ func main() {
 	}
 
 	result := evidence{
-		Component:                   "GoreeCloud Drive Wardveil Scan runtime negative acceptance",
-		DriveRevision:               revision,
-		WardveilEndpoint:            endpoint,
-		RuntimeNegativeMatrix:       "passed",
-		LiveWardveilCases:           []string{"exact_replay_cached", "conflicting_replay_rejected"},
-		ControlledDriveCases:        []string{"scanner_timeout_fail_closed", "expired_evidence_fail_closed", "digest_mismatch_fail_closed", "changed_during_scan_fail_closed", "suspicious_content_held", "unknown_result_fail_closed", "unsupported_result_fail_closed"},
-		ScannerTimeoutFailClosed:    timeoutStatus,
-		ExpiredEvidenceFailClosed:   expired,
-		DigestMismatchFailClosed:    digestMismatch,
-		ChangedDuringScanFailClosed: changedDuringScan,
-		SuspiciousContentHeld:       suspicious,
-		UnknownResultFailClosed:     unknown,
-		UnsupportedResultFailClosed: unsupported,
-		ExactReplayCached:           exactReplay,
-		ConflictingReplayRejected:   conflictingReplay,
-		ReplayDurability:            "runtime_in_memory_behavior_passed_durability_not_proven",
-		RevokedCredential:           "not_proven",
-		StaleSignatures:             "not_proven",
-		CapacityExhaustion:          "not_proven",
-		ProductionRuntimeAcceptance: "unaccepted",
-		ObservedAt:                  time.Now().UTC(),
+		Component:                     "GoreeCloud Drive Wardveil Scan runtime negative acceptance",
+		DriveRevision:                 revision,
+		WardveilEndpoint:              endpoint,
+		WardveilRevision:              replayBinding.WardveilRevision,
+		WardveilRestartEvidenceSHA256: replayBinding.EvidenceSHA256,
+		WardveilRestartEvidenceAt:     replayBinding.ObservedAt,
+		RuntimeNegativeMatrix:         "passed",
+		LiveWardveilCases:             []string{"exact_replay_cached", "conflicting_replay_rejected"},
+		ValidatedWardveilRuntimeCases: []string{"single_host_restart_durability"},
+		ControlledDriveCases:          []string{"scanner_timeout_fail_closed", "expired_evidence_fail_closed", "digest_mismatch_fail_closed", "changed_during_scan_fail_closed", "suspicious_content_held", "unknown_result_fail_closed", "unsupported_result_fail_closed"},
+		ScannerTimeoutFailClosed:      timeoutStatus,
+		ExpiredEvidenceFailClosed:     expired,
+		DigestMismatchFailClosed:      digestMismatch,
+		ChangedDuringScanFailClosed:   changedDuringScan,
+		SuspiciousContentHeld:         suspicious,
+		UnknownResultFailClosed:       unknown,
+		UnsupportedResultFailClosed:   unsupported,
+		ExactReplayCached:             exactReplay,
+		ConflictingReplayRejected:     conflictingReplay,
+		ReplayDurability:              replayBinding.ReplayDurability,
+		MultiHostReplayDurability:     replayBinding.MultiHostReplayStatus,
+		RevokedCredential:             "not_proven",
+		StaleSignatures:               "not_proven",
+		CapacityExhaustion:            "not_proven",
+		ProductionRuntimeAcceptance:   "unaccepted",
+		ObservedAt:                    time.Now().UTC(),
 	}
 
 	raw, err := json.MarshalIndent(result, "", "  ")
