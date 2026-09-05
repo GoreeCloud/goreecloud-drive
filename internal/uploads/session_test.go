@@ -40,11 +40,15 @@ func (f *fakeStore) Finalize(_, _, _ string) error {
 }
 
 type fakeSecurityGate struct {
-	decision wardveil.Decision
-	err      error
+	decision     wardveil.Decision
+	err          error
+	beforeReturn func()
 }
 
 func (g fakeSecurityGate) EvaluateUpload(context.Context, string, string, string) (wardveil.Decision, error) {
+	if g.beforeReturn != nil {
+		g.beforeReturn()
+	}
 	return g.decision, g.err
 }
 
@@ -165,5 +169,51 @@ func TestServiceRejectsWrongOffsetAndOwner(t *testing.T) {
 	}
 	if _, err := service.Get(ctx, "other", "space", session.ID); err != ErrForbidden {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestServiceRejectsExpiredSessionOperations(t *testing.T) {
+	repo := NewMemoryRepository()
+	store := &fakeStore{}
+	service := New(repo, store, allowGate(), 8, time.Hour)
+	current := time.Date(2026, 9, 5, 16, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return current }
+	session := createSession(t, service)
+	current = session.ExpiresAt
+
+	ctx := context.Background()
+	if _, err := service.Get(ctx, "acct", "space", session.ID); !errors.Is(err, ErrExpired) {
+		t.Fatalf("Get() err=%v want ErrExpired", err)
+	}
+	if _, err := service.Append(ctx, "acct", "space", session.ID, 0, bytes.NewBufferString("x")); !errors.Is(err, ErrExpired) {
+		t.Fatalf("Append() err=%v want ErrExpired", err)
+	}
+	if _, err := service.Complete(ctx, "acct", "space", session.ID); !errors.Is(err, ErrExpired) {
+		t.Fatalf("Complete() err=%v want ErrExpired", err)
+	}
+	if store.finalized {
+		t.Fatal("expired upload must not be finalized")
+	}
+}
+
+func TestServiceCompleteRechecksExpiryAfterSecurityEvaluation(t *testing.T) {
+	repo := NewMemoryRepository()
+	store := &fakeStore{}
+	current := time.Date(2026, 9, 5, 16, 0, 0, 0, time.UTC)
+	gate := fakeSecurityGate{
+		decision: wardveil.Decision{Disposition: wardveil.DispositionAllow, CanRelease: true},
+		beforeReturn: func() {
+			current = current.Add(2 * time.Hour)
+		},
+	}
+	service := New(repo, store, gate, 8, time.Hour)
+	service.now = func() time.Time { return current }
+	session := createSession(t, service)
+
+	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrExpired) {
+		t.Fatalf("Complete() err=%v want ErrExpired", err)
+	}
+	if store.finalized {
+		t.Fatal("upload that expires during security evaluation must remain staged")
 	}
 }
