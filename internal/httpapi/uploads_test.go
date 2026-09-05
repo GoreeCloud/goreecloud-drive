@@ -17,6 +17,17 @@ func TestWriteUploadErrorMapsOffsetConflict(t *testing.T) {
 	}
 }
 
+func TestWriteUploadErrorMapsExpiredSession(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeUploadError(recorder, uploads.ErrExpired)
+	if recorder.Code != http.StatusGone {
+		t.Fatalf("status=%d want %d", recorder.Code, http.StatusGone)
+	}
+	if recorder.Body.String() != "{\"error\":\"upload session expired\"}\n" {
+		t.Fatalf("unexpected response body %q", recorder.Body.String())
+	}
+}
+
 func TestWriteUploadErrorMapsSecurityBlockedWithoutLeakingEvidence(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	writeUploadError(recorder, uploads.ErrSecurityBlocked)
