@@ -144,6 +144,8 @@ func writeUploadError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "upload session not found"})
 	case errors.Is(err, uploads.ErrForbidden):
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+	case errors.Is(err, uploads.ErrExpired):
+		writeJSON(w, http.StatusGone, map[string]string{"error": "upload session expired"})
 	case errors.Is(err, uploads.ErrOffsetMismatch):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "upload offset mismatch"})
 	case errors.Is(err, uploads.ErrCompleted):
