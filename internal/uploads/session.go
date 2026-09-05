@@ -15,6 +15,7 @@ import (
 var (
 	ErrNotFound            = errors.New("upload session not found")
 	ErrForbidden           = errors.New("upload session access denied")
+	ErrExpired             = errors.New("upload session expired")
 	ErrOffsetMismatch      = errors.New("upload offset mismatch")
 	ErrCompleted           = errors.New("upload session already completed")
 	ErrInvalidTarget       = errors.New("upload target is invalid")
@@ -120,6 +121,9 @@ func (s Service) Get(ctx context.Context, accountID, spaceID, uploadID string) (
 	if session.AccountID != accountID || session.SpaceID != spaceID {
 		return Session{}, ErrForbidden
 	}
+	if s.isExpired(session) {
+		return Session{}, ErrExpired
+	}
 	return session, nil
 }
 
@@ -166,6 +170,11 @@ func (s Service) Complete(ctx context.Context, accountID, spaceID, uploadID stri
 	if !decision.CanRelease {
 		return session, &SecurityBlockedError{Decision: decision}
 	}
+	// Security evaluation may take long enough for the session to expire. Do
+	// not publish staged bytes into the active object namespace after expiry.
+	if s.isExpired(session) {
+		return session, ErrExpired
+	}
 	if err := s.store.Finalize(spaceID, uploadID, session.NodeID); err != nil {
 		return Session{}, err
 	}
@@ -174,6 +183,13 @@ func (s Service) Complete(ctx context.Context, accountID, spaceID, uploadID stri
 		return Session{}, err
 	}
 	return session, nil
+}
+
+func (s Service) isExpired(session Session) bool {
+	if session.ExpiresAt.IsZero() {
+		return true
+	}
+	return !s.now().UTC().Before(session.ExpiresAt.UTC())
 }
 
 func newUUID() (string, error) {
