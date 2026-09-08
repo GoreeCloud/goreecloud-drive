@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -100,6 +101,19 @@ func (l *Local) AppendStaging(spaceID, uploadID string, expectedOffset int64, sr
 		return expectedOffset, fmt.Errorf("sync upload chunk: %w", err)
 	}
 	return expectedOffset + written, nil
+}
+
+// DiscardStaging removes one private staged upload. Missing staging content is
+// treated as already discarded so expiry cleanup can be safely retried.
+func (l *Local) DiscardStaging(spaceID, uploadID string) error {
+	path, err := l.StagingPath(spaceID, uploadID)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("discard staged upload: %w", err)
+	}
+	return nil
 }
 
 func filepathDir(path string) string {
