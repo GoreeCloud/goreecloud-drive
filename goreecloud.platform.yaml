@@ -78,7 +78,7 @@ platform_systems:
       - web/styles.css
       - web/app.js
       - README.md
-    notes: A first-party responsive Web foundation shell exists, but no current application-specific accepted GLAZE UI V1.1 / 1.1.0 conformance record is established. The shell requires explicit V1.1 source reconciliation plus rendered, accessibility, resilience, adaptive, representative-target, and Human Visual Excellence acceptance before conformance can be claimed.
+    notes: A first-party responsive Web foundation shell exists, but no current application-specific accepted GLAZE UI V1.3 / 1.3.0 conformance record is established. The shell requires explicit V1.3 source reconciliation plus rendered, accessibility, resilience, adaptive, representative-target, and Human Visual Excellence acceptance before conformance can be claimed. The null source version is intentional until a reviewed Drive-specific mapping is implemented and evidenced.
   mesh:
     result: applicable-blocked
     version: null
@@ -140,10 +140,10 @@ external_dependencies:
 
 compatibility:
   platform_contract: "0.2"
-  glaze_ui_required: "1.1.0"
+  glaze_ui_required: "1.3.0"
   requires:
     - goreecloud-platform-contract==0.2
-    - glaze-ui==1.1.0
+    - glaze-ui==1.3.0
   provides:
     - goreecloud-drive-api-v1
     - wardveil-drive-file-scan-consumer
@@ -180,7 +180,7 @@ conformance:
     - Privacy Shield integration, retention/consent authority, and production privacy acceptance are not established.
     - Wardveil Security has substantive Development scan/quarantine integration, but production scanning transport, controlled quarantine mutation/readback, representative deployment evidence, and current platform-level acceptance remain incomplete.
     - Everkeep integration plus accepted backup, clean-target restore, rollback, recovery verification, and full Drive continuity scope are not established.
-    - The first-party Web shell lacks current accepted GLAZE UI V1.1 / 1.1.0 source reconciliation and application-specific rendered/accessibility/adaptive/Human Visual Excellence acceptance.
+    - The first-party Web shell lacks current accepted GLAZE UI V1.3 / 1.3.0 source reconciliation and application-specific rendered/accessibility/adaptive/Human Visual Excellence acceptance.
     - GoreeCloud Mesh registration, capability/event publication, service identity, and runtime acceptance are not established.
     - Production GoreeCloud Identity credential/session/device integration and acceptance are not established.
     - Production authentication, file operations, sharing, Private Spaces, Sync transfer integration, native clients, deployment, representative-environment acceptance, signing/provenance, release approval, and Release Candidate/Stable qualification remain outstanding.
