@@ -68,3 +68,25 @@ func TestAppendStagingRollsBackOversizedChunk(t *testing.T) {
 		t.Fatalf("offset=%d want 0", session.Offset)
 	}
 }
+
+func TestDiscardStagingRemovesContentAndIsIdempotent(t *testing.T) {
+	store, _ := NewLocal(t.TempDir())
+	space := "11111111-1111-1111-1111-111111111111"
+	upload := "22222222-2222-2222-2222-222222222222"
+	if _, err := store.AppendStaging(space, upload, 0, strings.NewReader("expired"), 16); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DiscardStaging(space, upload); err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Session(space, upload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Offset != 0 {
+		t.Fatalf("offset=%d want 0 after discard", session.Offset)
+	}
+	if err := store.DiscardStaging(space, upload); err != nil {
+		t.Fatalf("idempotent discard failed: %v", err)
+	}
+}
