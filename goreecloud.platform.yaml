@@ -1,0 +1,186 @@
+schema_version: "0.2"
+
+component:
+  type: application
+  id: goreecloud-drive
+  product_name: GoreeCloud Drive
+  repository: GoreeCloud/goreecloud-drive
+
+lifecycle: development
+version: "0.0.0-dev"
+
+supported_platforms:
+  - server
+  - web
+
+api:
+  versions:
+    - v1
+  endpoints:
+    - name: health
+      url: /healthz
+      purpose: Process liveness.
+    - name: readiness
+      url: /readyz
+      purpose: Development service readiness.
+    - name: status
+      url: /api/v1/status
+      purpose: Report current Development lifecycle and implemented capability state.
+
+platform_systems:
+  manager:
+    result: applicable-blocked
+    version: null
+    evidence:
+      - README.md
+      - api/openapi.yaml
+    notes: Drive exposes Development health, readiness, and status boundaries, but accepted GoreeCloud Manager registration, lifecycle control, deployment visibility, and production operational integration are not established.
+  privacy_shield:
+    result: applicable-blocked
+    version: null
+    evidence:
+      - docs/SECURITY.md
+      - docs/STORAGE.md
+      - internal/authz/policy.go
+      - internal/storage/local.go
+      - internal/uploads/session.go
+    notes: Drive has ownership-first authorization, separate active/staging/Trash/quarantine storage boundaries, loopback-safe defaults, and fail-closed upload publication behavior. Accepted Privacy Shield policy integration, consent/retention authority, privacy acceptance, and production data-governance evidence are not established.
+  wardveil_security:
+    result: applicable-blocked
+    version: null
+    evidence:
+      - contracts/wardveil.drive-file-scan.json
+      - contracts/wardveil.drive-quarantine-target.json
+      - docs/WARDVEIL-SCANNING.md
+      - docs/WARDVEIL-QUARANTINE.md
+      - docs/WARDVEIL-LIVE-ACCEPTANCE.md
+      - internal/wardveil/scan.go
+      - internal/wardveil/http_scanner.go
+      - internal/quarantine/service.go
+      - internal/storage/quarantine.go
+      - cmd/wardveil-acceptance/main.go
+      - cmd/wardveil-negative-acceptance/main.go
+    notes: Drive has substantive Development Wardveil Scan and Drive-owned quarantine-target integration, including exact resource/SHA-256 binding, current clean-evidence publication gates, durable quarantine claim/isolation/readback behavior, signed loopback scan transport, negative acceptance tooling, and fail-closed ambiguous-state handling. Production scanning transport, controlled production mutation/readback, representative deployment acceptance, and current platform-level Wardveil acceptance remain outstanding, so conformance is not claimed.
+  everkeep:
+    result: applicable-blocked
+    version: null
+    evidence:
+      - README.md
+      - docs/STORAGE.md
+      - internal/storage/local.go
+      - migrations/0001_foundation.sql
+    notes: Drive explicitly distinguishes files, versions, Trash, quarantine copies, and Sync replicas from backup and recognizes Everkeep as recovery authority. Accepted Everkeep backup scope, clean-target restore, recovery verification, rollback, and production continuity integration are not implemented or accepted.
+  glaze_ui:
+    result: applicable-migration-required
+    version: null
+    evidence:
+      - web/index.html
+      - web/styles.css
+      - web/app.js
+      - README.md
+    notes: A first-party responsive Web foundation shell exists, but no current application-specific accepted GLAZE UI V1.1 / 1.1.0 conformance record is established. The shell requires explicit V1.1 source reconciliation plus rendered, accessibility, resilience, adaptive, representative-target, and Human Visual Excellence acceptance before conformance can be claimed.
+  mesh:
+    result: applicable-blocked
+    version: null
+    evidence:
+      - README.md
+      - docs/ARCHITECTURE.md
+    notes: Drive owns file state while GoreeCloud Sync owns transfer and replication. Canonical GoreeCloud Mesh service registration, capability publication, service identity, event contracts, producer evidence, and runtime acceptance are not established for Drive.
+    capabilities: []
+    dependencies: []
+    published_events: []
+    consumed_events: []
+  identity:
+    result: applicable-blocked
+    version: null
+    evidence:
+      - internal/authn/principal.go
+      - internal/authz/policy.go
+      - migrations/0001_foundation.sql
+      - README.md
+    notes: Drive has Development principal and ownership/authorization foundations and a multi-user schema, but production GoreeCloud Identity credential issuance, session validation, user/device identity, and accepted account integration are not established.
+
+health:
+  health_endpoint: /healthz
+  readiness_endpoint: /readyz
+
+continuity:
+  backup:
+    required: true
+    requirements:
+      - Define the approved Drive-owned backup scope for ordinary file content, metadata, ownership, Spaces, sharing state, versions, quotas, and required configuration under Everkeep authority.
+      - Preserve the boundary that Trash, quarantine copies, synchronized replicas, caches, and version history do not become backup evidence merely because duplicate data exists.
+      - Exclude runtime secrets, reusable service credentials, ephemeral upload-session state, and quarantine-control credentials from ordinary portable backup unless separately approved.
+  restore:
+    required: true
+    requirements:
+      - Establish clean-target restore of authorized Drive content and metadata with ownership, Space membership, sharing, version, quota, Trash, and quarantine semantics preserved or explicitly reconciled.
+      - Validate restore ordering with Wardveil so recovered content cannot bypass current publication/quarantine policy.
+      - Define conflict, partial-failure, rollback, interrupted-restore, and post-restore verification behavior under accepted Everkeep authority before restore qualification.
+  export:
+    required: true
+    requirements:
+      - Preserve ordinary user files in application-independent formats where possible and provide explicit metadata/export contracts for Drive-owned semantics that cannot be represented by file bytes alone.
+      - Keep private quarantine-control data, reusable credentials, service secrets, and unrelated account/security state out of ordinary user exports.
+      - Make inclusion or exclusion of Trash, version history, shares, Spaces, and quarantine state explicit rather than silently treating them as ordinary files.
+  portability:
+    required: true
+    requirements:
+      - Preserve file identity, ownership, hierarchy, timestamps, checksums, and applicable Drive-owned metadata with deterministic validation.
+      - Keep the authority boundary that Drive owns file/folder semantics while Sync owns replication and Everkeep owns recovery.
+      - Define cross-instance Identity rebinding, Space membership mapping, sharing reconstruction, conflict handling, and quarantine-state policy before product-wide portability is claimed.
+
+external_dependencies:
+  - name: PostgreSQL
+    purpose: Durable multi-user Drive metadata, ownership, quotas, nodes, and upload-session foundations when configured.
+    required: false
+  - name: Cloudflare Workers
+    purpose: Optional internal-RPC-only bridge for the Drive-owned Wardveil quarantine target and non-mutating deployment acceptance probing.
+    required: false
+
+compatibility:
+  platform_contract: "0.2"
+  glaze_ui_required: "1.1.0"
+  requires:
+    - goreecloud-platform-contract==0.2
+    - glaze-ui==1.1.0
+  provides:
+    - goreecloud-drive-api-v1
+    - wardveil-drive-file-scan-consumer
+    - wardveil-drive-quarantine-target
+
+evidence:
+  acceptance_tests: []
+  release: []
+
+conformance:
+  status: nonconformant
+  validated_at: null
+  evidence:
+    - README.md
+    - api/openapi.yaml
+    - docs/PLATFORM_CONFORMANCE.md
+    - docs/SECURITY.md
+    - docs/STORAGE.md
+    - docs/WARDVEIL-SCANNING.md
+    - docs/WARDVEIL-QUARANTINE.md
+    - docs/WARDVEIL-LIVE-ACCEPTANCE.md
+    - contracts/wardveil.drive-file-scan.json
+    - contracts/wardveil.drive-quarantine-target.json
+    - internal/authn/principal.go
+    - internal/authz/policy.go
+    - internal/uploads/session.go
+    - internal/storage/quarantine.go
+    - internal/wardveil/scan.go
+    - internal/wardveil/http_scanner.go
+    - cmd/wardveil-acceptance/main.go
+    - cmd/wardveil-negative-acceptance/main.go
+  blockers:
+    - GoreeCloud Manager registration, lifecycle control, deployment visibility, and operational acceptance are not established.
+    - Privacy Shield integration, retention/consent authority, and production privacy acceptance are not established.
+    - Wardveil Security has substantive Development scan/quarantine integration, but production scanning transport, controlled quarantine mutation/readback, representative deployment evidence, and current platform-level acceptance remain incomplete.
+    - Everkeep integration plus accepted backup, clean-target restore, rollback, recovery verification, and full Drive continuity scope are not established.
+    - The first-party Web shell lacks current accepted GLAZE UI V1.1 / 1.1.0 source reconciliation and application-specific rendered/accessibility/adaptive/Human Visual Excellence acceptance.
+    - GoreeCloud Mesh registration, capability/event publication, service identity, and runtime acceptance are not established.
+    - Production GoreeCloud Identity credential/session/device integration and acceptance are not established.
+    - Production authentication, file operations, sharing, Private Spaces, Sync transfer integration, native clients, deployment, representative-environment acceptance, signing/provenance, release approval, and Release Candidate/Stable qualification remain outstanding.
