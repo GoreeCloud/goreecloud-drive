@@ -51,6 +51,7 @@ type Repository interface {
 type StagingStore interface {
 	AppendStaging(spaceID, uploadID string, expectedOffset int64, src io.Reader, maxChunkBytes int64) (int64, error)
 	OpenStaging(spaceID, uploadID string) (io.ReadCloser, error)
+	DiscardStaging(spaceID, uploadID string) error
 	Finalize(spaceID, uploadID, nodeID string) error
 }
 
@@ -114,6 +115,9 @@ func (s Service) Create(ctx context.Context, accountID, spaceID, nodeID, parentN
 }
 
 func (s Service) Get(ctx context.Context, accountID, spaceID, uploadID string) (Session, error) {
+	if s.repo == nil || s.store == nil {
+		return Session{}, fmt.Errorf("upload service unavailable")
+	}
 	session, err := s.repo.Get(ctx, uploadID)
 	if err != nil {
 		return Session{}, err
@@ -121,8 +125,8 @@ func (s Service) Get(ctx context.Context, accountID, spaceID, uploadID string) (
 	if session.AccountID != accountID || session.SpaceID != spaceID {
 		return Session{}, ErrForbidden
 	}
-	if s.isExpired(session) {
-		return Session{}, ErrExpired
+	if err := s.rejectExpired(session); err != nil {
+		return Session{}, err
 	}
 	return session, nil
 }
@@ -171,9 +175,10 @@ func (s Service) Complete(ctx context.Context, accountID, spaceID, uploadID stri
 		return session, &SecurityBlockedError{Decision: decision}
 	}
 	// Security evaluation may take long enough for the session to expire. Do
-	// not publish staged bytes into the active object namespace after expiry.
-	if s.isExpired(session) {
-		return session, ErrExpired
+	// not publish staged bytes into the active object namespace after expiry,
+	// and opportunistically remove those now-unusable staging bytes.
+	if err := s.rejectExpired(session); err != nil {
+		return session, err
 	}
 	if err := s.store.Finalize(spaceID, uploadID, session.NodeID); err != nil {
 		return Session{}, err
@@ -183,6 +188,21 @@ func (s Service) Complete(ctx context.Context, accountID, spaceID, uploadID stri
 		return Session{}, err
 	}
 	return session, nil
+}
+
+func (s Service) rejectExpired(session Session) error {
+	if !s.isExpired(session) {
+		return nil
+	}
+	if s.store == nil {
+		return ErrExpired
+	}
+	if err := s.store.DiscardStaging(session.SpaceID, session.ID); err != nil {
+		// Expiry remains authoritative even when cleanup cannot complete. The
+		// wrapped error preserves ErrExpired for the HTTP fail-closed mapping.
+		return fmt.Errorf("%w: discard staged content: %v", ErrExpired, err)
+	}
+	return ErrExpired
 }
 
 func (s Service) isExpired(session Session) bool {

@@ -12,9 +12,11 @@ import (
 )
 
 type fakeStore struct {
-	offset    int64
-	content   []byte
-	finalized bool
+	offset       int64
+	content      []byte
+	finalized    bool
+	discardCalls int
+	discardErr   error
 }
 
 func (f *fakeStore) AppendStaging(_, _ string, expectedOffset int64, src io.Reader, maxChunkBytes int64) (int64, error) {
@@ -32,6 +34,16 @@ func (f *fakeStore) AppendStaging(_, _ string, expectedOffset int64, src io.Read
 
 func (f *fakeStore) OpenStaging(_, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(f.content)), nil
+}
+
+func (f *fakeStore) DiscardStaging(_, _ string) error {
+	f.discardCalls++
+	if f.discardErr != nil {
+		return f.discardErr
+	}
+	f.offset = 0
+	f.content = nil
+	return nil
 }
 
 func (f *fakeStore) Finalize(_, _, _ string) error {
@@ -172,20 +184,29 @@ func TestServiceRejectsWrongOffsetAndOwner(t *testing.T) {
 	}
 }
 
-func TestServiceRejectsExpiredSessionOperations(t *testing.T) {
+func TestServiceRejectsExpiredSessionOperationsAndDiscardsStaging(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	service := New(repo, store, allowGate(), 8, time.Hour)
 	current := time.Date(2026, 9, 5, 16, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return current }
 	session := createSession(t, service)
+	ctx := context.Background()
+	if _, err := service.Append(ctx, "acct", "space", session.ID, 0, bytes.NewBufferString("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if string(store.content) != "hello" {
+		t.Fatalf("staging content=%q want hello", store.content)
+	}
 	current = session.ExpiresAt
 
-	ctx := context.Background()
 	if _, err := service.Get(ctx, "acct", "space", session.ID); !errors.Is(err, ErrExpired) {
 		t.Fatalf("Get() err=%v want ErrExpired", err)
 	}
-	if _, err := service.Append(ctx, "acct", "space", session.ID, 0, bytes.NewBufferString("x")); !errors.Is(err, ErrExpired) {
+	if len(store.content) != 0 || store.offset != 0 || store.discardCalls != 1 {
+		t.Fatalf("expired staging was not discarded: content=%q offset=%d calls=%d", store.content, store.offset, store.discardCalls)
+	}
+	if _, err := service.Append(ctx, "acct", "space", session.ID, 5, bytes.NewBufferString("x")); !errors.Is(err, ErrExpired) {
 		t.Fatalf("Append() err=%v want ErrExpired", err)
 	}
 	if _, err := service.Complete(ctx, "acct", "space", session.ID); !errors.Is(err, ErrExpired) {
@@ -196,7 +217,27 @@ func TestServiceRejectsExpiredSessionOperations(t *testing.T) {
 	}
 }
 
-func TestServiceCompleteRechecksExpiryAfterSecurityEvaluation(t *testing.T) {
+func TestServiceExpiredCleanupFailureStillFailsClosedAsExpired(t *testing.T) {
+	repo := NewMemoryRepository()
+	store := &fakeStore{content: []byte("staged"), discardErr: errors.New("storage unavailable")}
+	service := New(repo, store, allowGate(), 8, time.Hour)
+	current := time.Date(2026, 9, 5, 16, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return current }
+	session := createSession(t, service)
+	current = session.ExpiresAt
+
+	if _, err := service.Get(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrExpired) {
+		t.Fatalf("Get() err=%v want ErrExpired", err)
+	}
+	if store.discardCalls != 1 {
+		t.Fatalf("discard calls=%d want 1", store.discardCalls)
+	}
+	if string(store.content) != "staged" {
+		t.Fatal("failed discard must not pretend staged content was removed")
+	}
+}
+
+func TestServiceCompleteRechecksExpiryAfterSecurityEvaluationAndDiscardsStaging(t *testing.T) {
 	repo := NewMemoryRepository()
 	store := &fakeStore{}
 	current := time.Date(2026, 9, 5, 16, 0, 0, 0, time.UTC)
@@ -209,11 +250,17 @@ func TestServiceCompleteRechecksExpiryAfterSecurityEvaluation(t *testing.T) {
 	service := New(repo, store, gate, 8, time.Hour)
 	service.now = func() time.Time { return current }
 	session := createSession(t, service)
+	if _, err := service.Append(context.Background(), "acct", "space", session.ID, 0, bytes.NewBufferString("hello")); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := service.Complete(context.Background(), "acct", "space", session.ID); !errors.Is(err, ErrExpired) {
 		t.Fatalf("Complete() err=%v want ErrExpired", err)
 	}
 	if store.finalized {
-		t.Fatal("upload that expires during security evaluation must remain staged")
+		t.Fatal("upload that expires during security evaluation must not be finalized")
+	}
+	if len(store.content) != 0 || store.discardCalls != 1 {
+		t.Fatalf("expired post-scan staging was not discarded: content=%q calls=%d", store.content, store.discardCalls)
 	}
 }
